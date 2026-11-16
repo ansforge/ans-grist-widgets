@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carte de France – Widget Grist</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:#f0f2f5;overflow:hidden;color:#222}
+    #app{display:flex;flex-direction:column;height:100vh}
+
+    /* Header */
+    #hdr{background:#1a3a5c;color:#fff;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
+    #hdr h1{font-size:14px;font-weight:600;color:#fff}
+    #hdr .sp{flex:1}
+    .hbtn{font-size:11px;padding:3px 8px;border:1px solid rgba(255,255,255,0.35);border-radius:3px;background:transparent;color:#fff;cursor:pointer;white-space:nowrap}
+    .hbtn.on{background:rgba(255,255,255,0.22);border-color:#fff}
+    .hbtn.icon{font-size:14px;padding:2px 6px}
+    #uc-wrap,#ch-wrap{display:none;align-items:center;gap:4px;font-size:11px;color:#cce}
+    #uc-wrap.show,#ch-wrap.show{display:flex}
+    #uc-wrap input,#ch-wrap input[type=color]{width:24px;height:20px;border:none;border-radius:2px;cursor:pointer;padding:1px}
+
+    /* Layout */
+    #main{display:flex;flex:1;overflow:hidden}
+
+    /* Carte */
+    #mp{flex:1;position:relative;min-width:0}
+    #map{position:absolute;inset:0;background:#dce8f5}
+    .leaflet-container{background:#dce8f5!important}
+
+    /* DOM-TOM insets */
+    #dtp{position:absolute;bottom:8px;right:8px;display:grid;grid-template-columns:1fr 1fr;gap:3px;z-index:1000;width:175px}
+    .mw{position:relative}.mw.full{grid-column:1/-1}
+    .mm{width:84px;height:68px;border:1.5px solid #999;border-radius:4px;background:#dce8f5;overflow:hidden}
+    .mw.full .mm{width:100%;height:68px}
+    .ml{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:9px;color:#333;background:rgba(255,255,255,0.7);pointer-events:none;z-index:10;padding:1px 0}
+
+    /* Légende */
+    #leg{position:absolute;top:8px;left:8px;background:rgba(255,255,255,0.94);border:1px solid #ccc;border-radius:6px;padding:7px 10px;font-size:11px;z-index:1000;min-width:120px;max-height:200px;overflow-y:auto;color:#333}
+    #leg h4{font-size:11px;margin-bottom:4px;font-weight:600;color:#333}
+    .lr{display:flex;align-items:center;gap:5px;margin-bottom:3px;color:#333}
+    .ld{width:12px;height:12px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,0.15)}
+
+    /* Tooltip */
+    #tip{position:absolute;bottom:8px;left:8px;background:rgba(255,255,255,0.95);border:1px solid #ccc;border-radius:5px;padding:4px 8px;font-size:11px;z-index:1000;pointer-events:none;display:none;color:#222}
+    #tip.show{display:block}
+
+    /* Loading */
+    #ldg{position:absolute;inset:0;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;z-index:2000;flex-direction:column;gap:10px;font-size:13px;color:#555}
+    #ldg.gone{display:none}
+    .spin{width:28px;height:28px;border:3px solid #ddd;border-top-color:#1a3a5c;border-radius:50%;animation:sp 0.8s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+
+    /* Panneau droit */
+    #side{width:310px;background:#fff;border-left:1px solid #dde;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;color:#222}
+
+    /* Config banner */
+    #cfg-banner{background:#fff3e0;border-bottom:1px solid #ffcc80;padding:7px 11px;font-size:11px;color:#5d4037;display:none;cursor:pointer}
+    #cfg-banner.show{display:block}
+    #cfg-banner:hover{background:#ffe0b2}
+
+    /* Sections */
+    .sec{border-bottom:1px solid #eee;flex-shrink:0}
+    .sh{display:flex;align-items:center;padding:7px 11px;background:#f7f8fa;font-size:12px;font-weight:600;color:#444;cursor:pointer;user-select:none}
+    .sh .arr{margin-left:auto;font-size:10px}
+    .sb{padding:8px 11px}
+    .sb.closed{display:none}
+
+    /* Catégories */
+    #cl{display:flex;flex-direction:column;gap:5px;margin-bottom:6px}
+    .cr{display:flex;align-items:center;gap:7px;padding:5px 8px;border:1px solid #e0e0e0;border-radius:5px;background:#fafafa}
+    .cr.on{border-color:#4a90d9;background:#f0f6ff}
+    .cchk{width:15px;height:15px;cursor:pointer;flex-shrink:0;accent-color:#1a3a5c}
+    .csw{width:18px;height:18px;border-radius:4px;border:1.5px solid rgba(0,0,0,0.2);flex-shrink:0;cursor:pointer}
+    .cn{flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;font-weight:500}
+    .cedit{font-size:11px;background:none;border:none;cursor:pointer;color:#888;padding:1px 3px;border-radius:3px;flex-shrink:0}
+    .cedit:hover{background:#eee;color:#333}
+    /* Inline edit catégorie */
+    .cat-edit-row{display:flex;flex-direction:column;gap:5px;padding:6px 8px;border:1px solid #4a90d9;border-radius:5px;background:#f0f6ff;margin-bottom:2px}
+    .cat-edit-row input[type=text]{font-size:12px;border:1px solid #ccc;border-radius:3px;padding:4px 7px;width:100%;color:#222;background:#fff}
+    .cat-edit-row .col-row{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+    .col-chip{width:22px;height:22px;border-radius:4px;border:2px solid transparent;cursor:pointer;flex-shrink:0;transition:transform .1s}
+    .col-chip:hover{transform:scale(1.15)}
+    .col-chip.sel{border-color:#333;transform:scale(1.15)}
+    .col-hex{font-size:10px;border:1px solid #ccc;border-radius:3px;padding:3px 5px;width:72px;color:#222;font-family:monospace}
+    .cat-edit-btns{display:flex;gap:5px;justify-content:flex-end}
+    .btn-sm{font-size:11px;padding:3px 10px;border-radius:3px;cursor:pointer;border:1px solid #ccc;background:#fff;color:#333}
+    .btn-sm.ok{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
+
+    .nc{font-size:11px;color:#888;padding:4px 0}
+    .cumr{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#555}
+    .cumv{width:20px;height:20px;border-radius:3px;border:1px solid #ccc;cursor:pointer;position:relative;overflow:hidden;flex-shrink:0}
+    .cumv input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer}
+
+    /* Ajouter catégorie */
+    #add-cat-row{display:flex;gap:5px;margin-top:6px}
+    #add-cat-row input{flex:1;font-size:11px;border:1px solid #ddd;border-radius:3px;padding:3px 6px;color:#222}
+    #add-cat-row button{font-size:11px;padding:3px 8px;background:#1a3a5c;color:#fff;border:none;border-radius:3px;cursor:pointer}
+
+    /* Depts */
+    #ds{flex:1;overflow:hidden;display:flex;flex-direction:column}
+    #ds .sb:not(.closed){flex:1;overflow:hidden;display:flex;flex-direction:column}
+    #dsearch{width:100%;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 8px;margin-bottom:5px;color:#222;background:#fff}
+    #dsearch:focus{outline:none;border-color:#4a90d9}
+    /* Region filter */
+    #reg-filter{width:100%;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 6px;margin-bottom:5px;color:#222;background:#fff}
+    /* Filter tabs */
+    .fbs{display:flex;gap:3px;margin-bottom:4px;flex-wrap:wrap}
+    .fb{font-size:10px;padding:3px 6px;border:1px solid #ddd;border-radius:3px;background:#fff;cursor:pointer;color:#444}
+    .fb.on{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
+    /* Bulk actions */
+    .bulk-btns{display:flex;gap:3px;margin-bottom:5px}
+    .bbtn{font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;color:#444;flex:1;text-align:center}
+    .bbtn:hover{background:#eee}
+    #dw{flex:1;overflow-y:auto}
+    .dr{display:flex;align-items:center;gap:5px;padding:3px 2px;border-radius:3px;font-size:11px;color:#222}
+    .dr:hover{background:#f0f0f0}
+    .dr.gray{opacity:.4}
+    .dvis{width:13px;height:13px;cursor:pointer;flex-shrink:0}
+    .dc{font-size:10px;color:#777;width:26px;flex-shrink:0;text-align:right}
+    .dn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#222}
+    .dcs{display:flex;gap:3px;flex-shrink:0}
+    .cdot{width:14px;height:14px;border-radius:3px;cursor:pointer;border:1.5px solid rgba(0,0,0,0.2);flex-shrink:0;transition:transform .1s}
+    .cdot:hover{transform:scale(1.3)}
+
+    /* Modal */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:5000;display:flex;align-items:center;justify-content:center}
+    .modal-bg.gone{display:none}
+    .modal{background:#fff;border-radius:8px;width:min(520px,94vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.25);color:#222}
+    .mhd{background:#1a3a5c;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+    .mhd h2{font-size:14px;color:#fff}
+    .mhd button{background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1}
+    .mbody{flex:1;overflow-y:auto;padding:16px}
+    .mft{padding:10px 16px;border-top:1px solid #eee;display:flex;gap:8px;justify-content:flex-end;background:#fff}
+    .cfg-group{margin-bottom:14px}
+    .cfg-group label{display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:4px}
+    .cfg-group small{display:block;font-size:10px;color:#777;margin-bottom:4px}
+    .cfg-group select{width:100%;font-size:12px;border:1px solid #ccc;border-radius:4px;padding:5px 8px;background:#fff;color:#222}
+    .cfg-group select:focus{outline:none;border-color:#4a90d9}
+    .btn-primary{font-size:12px;padding:6px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer}
+    .btn-primary:hover{background:#254d80}
+    .btn-secondary{font-size:12px;padding:6px 14px;background:#fff;color:#333;border:1px solid #ccc;border-radius:4px;cursor:pointer}
+    .btn-secondary:hover{background:#f5f5f5}
+    #cfg-msg{margin:8px 16px;font-size:11px;border-radius:4px;padding:7px 10px;display:none}
+    #cfg-msg.ok{background:#e8f5e9;color:#1b5e20;display:block}
+    #cfg-msg.err{background:#fce4ec;color:#880e4f;display:block}
+
+    /* Guide */
+    .guide-section{margin-bottom:14px}
+    .guide-section h3{font-size:12px;font-weight:700;color:#1a3a5c;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #e0e0e0}
+    .guide-section p,.guide-section li{font-size:11px;color:#333;line-height:1.5;margin-bottom:3px}
+    .guide-section ul{padding-left:14px}
+    .guide-section table{width:100%;border-collapse:collapse;font-size:10px;margin-top:4px}
+    .guide-section th{background:#1a3a5c;color:#fff;padding:4px 7px;text-align:left}
+    .guide-section td{padding:3px 7px;border-bottom:1px solid #eee;color:#333}
+    code{background:#f0f0f0;padding:1px 4px;border-radius:3px;font-size:10px;font-family:monospace;color:#333}
+
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="hdr">
+    <h1>🗺 Carte de France</h1>
+    <div style="display:flex;gap:4px">
+      <button class="hbtn on" onclick="setMode('categorie',this)">Catégorie</button>
+      <button class="hbtn" onclick="setMode('unique',this)">Unique</button>
+      <button class="hbtn" onclick="setMode('choropleth',this)">Choroplèthe</button>
+    </div>
+    <div id="uc-wrap">Couleur: <input type="color" id="uc" value="#e74c3c" oninput="APP.uniqueColor=this.value;refresh()"></div>
+    <div id="ch-wrap">Bas:<input type="color" id="cl2" value="#ffffb2" oninput="APP.choroLow=this.value;refresh()"> Haut:<input type="color" id="ch2" value="#d7191c" oninput="APP.choroHigh=this.value;refresh()"></div>
+    <span class="sp"></span>
+    <button class="hbtn icon" onclick="showGuide()" title="Guide">❓</button>
+    <button class="hbtn icon" onclick="showConfig()" title="Configuration tables Grist">⚙️</button>
+  </div>
+
+  <div id="main">
+    <div id="mp">
+      <div id="map"></div>
+      <div id="dtp">
+        <div class="mw"><div class="mm" id="m971"></div><span class="ml">Guadeloupe</span></div>
+        <div class="mw"><div class="mm" id="m972"></div><span class="ml">Martinique</span></div>
+        <div class="mw"><div class="mm" id="m973"></div><span class="ml">Guyane</span></div>
+        <div class="mw"><div class="mm" id="m974"></div><span class="ml">Réunion</span></div>
+        <div class="mw full"><div class="mm" id="m976"></div><span class="ml">Mayotte</span></div>
+      </div>
+      <div id="leg"><h4>Légende</h4><div id="li"></div></div>
+      <div id="tip"></div>
+      <div id="ldg"><div class="spin"></div><span id="ldg-msg">Chargement…</span></div>
+    </div>
+
+    <div id="side">
+      <div id="cfg-banner" onclick="showConfig()">
+        ⚠️ <span id="cfg-banner-msg">Tables non configurées.</span> Cliquez → ⚙️
+      </div>
+
+      <!-- Catégories -->
+      <div class="sec">
+        <div class="sh" onclick="tog(this)">🏷 Catégories <span id="cbadge" style="font-weight:400;font-size:10px;color:#888;margin-left:4px"></span><span class="arr">▾</span></div>
+        <div class="sb">
+          <div id="cl"><div class="nc">Configurez les tables Grist via ⚙️</div></div>
+          <div id="add-cat-row">
+            <input type="text" id="new-cat-name" placeholder="Nouvelle catégorie…" onkeydown="if(event.key==='Enter')addCat()">
+            <button onclick="addCat()" title="Ajouter une catégorie">+ Ajouter</button>
+          </div>
+          <div class="cumr">
+            <input type="checkbox" id="cumchk" checked style="cursor:pointer;accent-color:#1a3a5c" onchange="APP.useCumul=this.checked;document.getElementById('cumsw').style.opacity=this.checked?'1':'0.3';refresh()">
+            <label for="cumchk" style="cursor:pointer">Cumul :</label>
+            <div class="cumv" id="cumsw" title="Couleur si plusieurs catégories sur un même département"><input type="color" id="cumc" value="#f39c12" oninput="APP.cumulColor=this.value;cumsw.style.background=this.value;refresh()"></div>
+            <span style="color:#777;font-size:10px">couleur si dept dans plusieurs catégories</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Départements -->
+      <div class="sec" id="ds">
+        <div class="sh" onclick="tog(this)">📍 Départements <span id="dbadge" style="font-weight:400;font-size:10px;color:#888;margin-left:4px"></span><span class="arr">▾</span></div>
+        <div class="sb">
+          <input type="text" id="dsearch" placeholder="Rechercher (nom ou code)…" oninput="renderDepts()">
+          <select id="reg-filter" onchange="renderDepts()">
+            <option value="">— Toutes les régions —</option>
+          </select>
+          <div class="fbs">
+            <button class="fb on" onclick="setF('all',this)">Tous</button>
+            <button class="fb" onclick="setF('sel',this)">Sélectionnés</button>
+            <button class="fb" onclick="setF('vis',this)">Visibles</button>
+            <button class="fb" onclick="setF('hid',this)">Grisés</button>
+          </div>
+          <div class="bulk-btns">
+            <button class="bbtn" onclick="bulkVis(true)" title="Dégrise tous les départements filtrés">👁 Tout visible</button>
+            <button class="bbtn" onclick="bulkVis(false)" title="Grise tous les départements filtrés">◐ Tout griser</button>
+          </div>
+          <div id="dw"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Configuration -->
+<div class="modal-bg gone" id="cfg-modal">
+  <div class="modal">
+    <div class="mhd"><h2>⚙️ Configuration – Tables Grist</h2><button onclick="closeModal('cfg-modal')">✕</button></div>
+    <div class="mbody">
+      <div id="cfg-loading" style="text-align:center;padding:20px;color:#666;font-size:12px">
+        <div class="spin" style="margin:0 auto 10px"></div>Chargement des tables…
+      </div>
+      <div id="cfg-form" style="display:none">
+        <div class="cfg-group">
+          <label>Table des Départements</label>
+          <small>Colonnes : code_dept, nom_dept, visible (et optionnel : code_region, nom_region)</small>
+          <select id="cfg-depts"></select>
+        </div>
+        <div class="cfg-group">
+          <label>Table des Catégories</label>
+          <small>Colonnes : nom, couleur, active (ou selection)</small>
+          <select id="cfg-cats"></select>
+        </div>
+        <div class="cfg-group">
+          <label>Table des Affiliations (liaison dept ↔ catégorie)</label>
+          <small>Laisser vide : le widget la remplit automatiquement</small>
+          <select id="cfg-dc" onchange="onCfgTableChange()"></select>
+        </div>
+        <div id="cfg-cols" style="display:none">
+          <div class="cfg-group">
+            <label>Colonne "département" dans Affiliations</label>
+            <select id="cfg-col-dept"></select>
+          </div>
+          <div class="cfg-group">
+            <label>Colonne "catégorie" dans Affiliations</label>
+            <select id="cfg-col-cat"></select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="cfg-msg"></div>
+    <div class="mft">
+      <button class="btn-secondary" onclick="closeModal('cfg-modal')">Annuler</button>
+      <button class="btn-primary" onclick="saveConfig()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Guide -->
+<div class="modal-bg gone" id="guide-modal">
+  <div class="modal" style="width:min(460px,94vw)">
+    <div class="mhd"><h2>❓ Guide – Carte de France Grist</h2><button onclick="closeModal('guide-modal')">✕</button></div>
+    <div class="mbody" style="padding:12px">
+      <div class="guide-section">
+        <h3>📋 3 tables à créer dans Grist</h3>
+        <table>
+          <tr><th>Table</th><th>Colonnes clés</th></tr>
+          <tr><td><code>Departements</code></td><td><code>code_dept</code>, <code>nom_dept</code>, <code>visible</code> (Bascule), <code>nom_region</code></td></tr>
+          <tr><td><code>Categories</code></td><td><code>nom</code>, <code>couleur</code>, <code>active</code> (Bascule)</td></tr>
+          <tr><td><code>Departement_categories</code></td><td><code>dept</code> (Réf→Depts), <code>categorie</code> (Réf→Cats)</td></tr>
+        </table>
+        <p style="margin-top:5px">CSV des 101 départements :<br><code>https://bigorneau15652.github.io/map/carte-france/departements.csv</code></p>
+      </div>
+      <div class="guide-section">
+        <h3>🔌 Ajouter le widget</h3>
+        <ul>
+          <li><b>Widget personnalisé</b> → URL : <code>https://bigorneau15652.github.io/map/carte-france/</code></li>
+          <li>Accès : <b>Accès complet au document</b> (obligatoire)</li>
+        </ul>
+      </div>
+      <div class="guide-section">
+        <h3>🎨 Couleurs (colonne <code>couleur</code>)</h3>
+        <p><span style="color:#e74c3c">● rouge</span> <span style="color:#2980b9">● bleu</span> <span style="color:#27ae60">● vert</span> <span style="color:#e67e22">● orange</span> <span style="color:#8e44ad">● violet</span> <span style="color:#f1c40f">● jaune</span> <span style="color:#e91e8c">● rose</span> <span style="color:#795548">● marron</span> <span style="color:#00bcd4">● cyan</span> <span style="color:#2c3e50">● noir</span><br>— ou HEX : <code>#3498db</code></p>
+      </div>
+      <div class="guide-section">
+        <h3>🖱️ Utilisation</h3>
+        <ul>
+          <li>Cochez ✓ une catégorie → active sur la carte. Cliquez ✏️ pour éditer son nom/couleur</li>
+          <li>Cliquez la <b>pastille colorée</b> d'un département → ajoute/retire de la catégorie</li>
+          <li>Décochez ☑ à gauche → le département devient grisé sur la carte</li>
+          <li>Filtrez par région → sélectionnez tout en un clic</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mft"><button class="btn-primary" onclick="closeModal('guide-modal')">Fermer</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Couleurs ──────────────────────────────────────────────
+const NAMED={bleu:'#2980b9',rouge:'#e74c3c',vert:'#27ae60',jaune:'#f1c40f',orange:'#e67e22',violet:'#8e44ad',rose:'#e91e8c',marron:'#795548',gris:'#7f8c8d',noir:'#2c3e50',blanc:'#ecf0f1',cyan:'#00bcd4',turquoise:'#1abc9c',emeraude:'#2ecc71',brique:'#c0392b'};
+const COL_ALIASES={orage:'orange',indigo:'violet',corail:'rouge',ocre:'orange',bordeaux:'brique',saumon:'rose',lilas:'violet',ecru:'blanc',kaki:'marron',sable:'jaune',azur:'cyan',carmin:'rouge',incarnat:'rose',ecarlate:'rouge',grenat:'brique'};
+const NAMED_COLORS=Object.entries(NAMED).map(([k,v])=>({k,v}));
+
+function col(raw){
+  if(!raw)return null;
+  const k=String(raw).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return NAMED[COL_ALIASES[k]||k]||(/^#[0-9a-f]{3,8}$/i.test(raw)?raw:null);
+}
+
+// ── DOM-TOM ───────────────────────────────────────────────
+const DT={'971':{el:'m971'},'972':{el:'m972'},'973':{el:'m973'},'974':{el:'m974'},'976':{el:'m976'}};
+// GeoJSON embarqué (évite les requêtes réseau vers github)
+const DT_GEOJSON={"971":{"type":"Feature","properties":{"code":"971"},"geometry":{"type":"MultiPolygon","coordinates":[[[[-61.63356,15.83977],[-61.65092,15.84865],[-61.63513,15.87096],[-61.61436,15.85533],[-61.63356,15.83977]]],[[[-61.11993,16.16716],[-61.13124,16.17236],[-61.10722,16.17219],[-61.11993,16.16716]]],[[[-61.00982,16.34998],[-61.00528,16.33151],[-61.09724,16.29052],[-61.09063,16.31183],[-61.00982,16.34998]]],[[[-61.59328,15.85253],[-61.60665,15.85713],[-61.57159,15.88257],[-61.56645,15.87097],[-61.59328,15.85253]]],[[[-61.32312,15.94961],[-61.31902,15.97592],[-61.27569,16.00729],[-61.23309,15.98571],[-61.19587,15.92129],[-61.23449,15.87904],[-61.27918,15.86653],[-61.33102,15.89811],[-61.33706,15.94149],[-61.32312,15.94961]]],[[[-61.80606,16.268],[-61.78744,16.33574],[-61.74328,16.36201],[-61.6712,16.31787],[-61.60233,16.30341],[-61.62691,16.28053],[-61.61353,16.26765],[-61.59864,16.2817],[-61.5974,16.26605],[-61.57612,16.28512],[-61.5495,16.27757],[-61.54455,16.22534],[-61.57992,16.23688],[-61.59043,16.19325],[-61.5777,16.14286],[-61.56086,16.13114],[-61.57038,16.11394],[-61.55534,16.05324],[-61.61918,15.97173],[-61.70767,15.94891],[-61.71514,15.98258],[-61.76954,16.05873],[-61.78233,16.2144],[-61.80606,16.268]]],[[[-61.53048,16.21784],[-61.55448,16.28813],[-61.54113,16.28962],[-61.52963,16.33921],[-61.49371,16.35409],[-61.49504,16.37674],[-61.52575,16.39467],[-61.54148,16.43762],[-61.46475,16.51429],[-61.41005,16.46739],[-61.40538,16.38453],[-61.37951,16.34371],[-61.29705,16.32779],[-61.2595,16.3043],[-61.24326,16.27317],[-61.17373,16.2448],[-61.25567,16.25601],[-61.46419,16.19676],[-61.53048,16.21784]]]]}},"972":{"type":"Feature","properties":{"code":"972"},"geometry":{"type":"MultiPolygon","coordinates":[[[[-61.11754,14.62759],[-61.15676,14.65651],[-61.18484,14.70852],[-61.17725,14.74619],[-61.22716,14.80256],[-61.20656,14.86166],[-61.13884,14.87777],[-61.02916,14.83036],[-60.95805,14.73656],[-60.93463,14.76183],[-60.87463,14.77476],[-60.87271,14.7582],[-60.8968,14.76124],[-60.89555,14.73347],[-60.92586,14.75076],[-60.94313,14.74335],[-60.94473,14.72283],[-60.92541,14.72149],[-60.93311,14.70768],[-60.91394,14.7162],[-60.90072,14.69878],[-60.94304,14.66928],[-60.92899,14.65294],[-60.88296,14.66549],[-60.90603,14.64819],[-60.88859,14.64131],[-60.89906,14.62145],[-60.87018,14.61953],[-60.87246,14.59631],[-60.85186,14.59473],[-60.8453,14.55941],[-60.82547,14.56838],[-60.83687,14.51169],[-60.82353,14.51307],[-60.8106,14.47978],[-60.82372,14.47184],[-60.80949,14.46019],[-60.83466,14.42287],[-60.84891,14.42711],[-60.83871,14.41063],[-60.86881,14.39456],[-60.89318,14.41918],[-60.86608,14.47046],[-60.89902,14.44767],[-60.9101,14.46892],[-60.97449,14.46803],[-60.98039,14.48205],[-60.99157,14.46633],[-61.03251,14.47708],[-61.05612,14.45394],[-61.07989,14.46872],[-61.08541,14.50529],[-61.10117,14.50817],[-61.08771,14.53411],[-61.0522,14.56242],[-61.02747,14.53497],[-60.98976,14.55024],[-61.02427,14.5848],[-61.01895,14.6117],[-61.03974,14.60647],[-61.03688,14.59263],[-61.09042,14.59864],[-61.11754,14.62759]]],[[[-60.88901,14.68959],[-60.89875,14.69637],[-60.87923,14.69258],[-60.88901,14.68959]]]]}},"973":{"type":"Feature","properties":{"code":"973"},"geometry":{"type":"Polygon","coordinates":[[[-53.46939,5.56526],[-53.28022,5.54305],[-53.25077,5.52123],[-53.30056,5.5529],[-53.27474,5.56324],[-53.13142,5.50816],[-53.07247,5.46828],[-53.02008,5.45805],[-52.99557,5.43198],[-52.99695,5.45973],[-52.94077,5.4497],[-52.8551,5.37761],[-52.83165,5.33329],[-52.66638,5.20027],[-52.6277,5.14633],[-52.55644,5.10698],[-52.55225,5.08784],[-52.41635,4.98177],[-52.36473,4.92075],[-52.30229,4.95135],[-52.18595,4.82164],[-52.14575,4.79091],[-52.11003,4.78476],[-52.00623,4.70183],[-51.91607,4.66885],[-51.86183,4.67209],[-51.83605,4.65428],[-51.7897,4.5907],[-51.75238,4.41825],[-51.71188,4.38806],[-51.69226,4.39508],[-51.71922,4.35284],[-51.71047,4.31221],[-51.66093,4.22659],[-51.61907,4.20109],[-51.6477,4.0795],[-51.67572,4.03606],[-51.77577,3.97647],[-51.79865,3.88696],[-51.874,3.80317],[-51.92125,3.77839],[-51.9217,3.72428],[-51.9726,3.70546],[-51.98827,3.62773],[-52.07315,3.51557],[-52.19084,3.29674],[-52.23361,3.24068],[-52.25976,3.2531],[-52.29251,3.22642],[-52.30272,3.1729],[-52.32958,3.17188],[-52.33142,3.1385],[-52.35286,3.12796],[-52.32594,3.07781],[-52.39339,2.94462],[-52.37931,2.91299],[-52.42264,2.89034],[-52.52934,2.65161],[-52.55524,2.64031],[-52.52768,2.58105],[-52.53692,2.55864],[-52.56121,2.55029],[-52.5517,2.52086],[-52.59379,2.47793],[-52.61798,2.47524],[-52.61029,2.45247],[-52.64637,2.43212],[-52.66058,2.37398],[-52.8559,2.28163],[-52.9045,2.18672],[-52.93461,2.19434],[-52.94116,2.17861],[-52.98784,2.16808],[-53.05191,2.18985],[-53.07969,2.22221],[-53.13062,2.22548],[-53.22419,2.20113],[-53.24475,2.21113],[-53.2742,2.19034],[-53.27893,2.2187],[-53.22685,2.26403],[-53.30091,2.30706],[-53.31921,2.34505],[-53.33191,2.33409],[-53.34009,2.35197],[-53.35638,2.34789],[-53.37214,2.31304],[-53.43082,2.28861],[-53.46108,2.25353],[-53.54676,2.25253],[-53.60446,2.28073],[-53.65692,2.27948],[-53.65188,2.29612],[-53.66549,2.30208],[-53.68284,2.2928],[-53.69896,2.31118],[-53.73963,2.30581],[-53.74771,2.31984],[-53.72084,2.34995],[-53.75089,2.35803],[-53.7361,2.37245],[-53.76604,2.37557],[-53.83464,2.33232],[-53.81326,2.31142],[-53.88277,2.30883],[-53.88524,2.27513],[-53.90545,2.26069],[-53.9344,2.28111],[-53.94433,2.21536],[-53.99041,2.20914],[-54.02353,2.18137],[-54.0656,2.19679],[-54.10138,2.11176],[-54.1686,2.12948],[-54.18718,2.17891],[-54.22414,2.14983],[-54.34188,2.15183],[-54.33916,2.16931],[-54.36307,2.17967],[-54.36228,2.21178],[-54.41565,2.19483],[-54.42675,2.21456],[-54.4489,2.20353],[-54.47724,2.21331],[-54.49589,2.24863],[-54.54821,2.26951],[-54.51391,2.28084],[-54.53371,2.29254],[-54.53912,2.32474],[-54.58765,2.32163],[-54.60155,2.33666],[-54.56974,2.35418],[-54.53363,2.33363],[-54.50642,2.33807],[-54.50502,2.39113],[-54.47616,2.43541],[-54.41956,2.43688],[-54.3871,2.47037],[-54.34863,2.52474],[-54.31842,2.63001],[-54.26642,2.68884],[-54.26477,2.72319],[-54.20821,2.77775],[-54.19792,2.80436],[-54.20784,2.83126],[-54.18596,2.83786],[-54.17945,2.85855],[-54.19521,2.88498],[-54.19114,2.92529],[-54.16072,2.9686],[-54.18145,2.98374],[-54.16961,3.0156],[-54.19464,3.06535],[-54.17431,3.07257],[-54.17445,3.10932],[-54.19178,3.13499],[-54.21139,3.12774],[-54.20119,3.14196],[-54.21389,3.15021],[-54.18909,3.20636],[-54.17529,3.20611],[-54.13635,3.26604],[-54.06429,3.31269],[-54.05851,3.38547],[-54.01218,3.42707],[-54.00931,3.53556],[-53.98063,3.60836],[-54.00669,3.64855],[-54.04637,3.63315],[-54.08289,3.67444],[-54.0791,3.71359],[-54.12195,3.79271],[-54.19776,3.80551],[-54.1919,3.84741],[-54.23694,3.8605],[-54.24924,3.90887],[-54.29002,3.9358],[-54.31789,4.01481],[-54.35762,4.05018],[-54.32309,4.14444],[-54.39123,4.18717],[-54.38729,4.35405],[-54.41365,4.37546],[-54.44195,4.37081],[-54.43219,4.46316],[-54.45008,4.52592],[-54.42474,4.55499],[-54.41529,4.6065],[-54.43796,4.6426],[-54.42372,4.66549],[-54.42729,4.71498],[-54.46631,4.73988],[-54.47873,4.90356],[-54.44355,4.94013],[-54.41555,5.08471],[-54.37539,5.1079],[-54.27901,5.26252],[-54.1842,5.32338],[-54.01886,5.52147],[-54.0037,5.5731],[-54.01488,5.65248],[-53.96839,5.74519],[-53.79928,5.72392],[-53.5926,5.6083],[-53.46939,5.56526]]]}},"974":{"type":"Feature","properties":{"code":"974"},"geometry":{"type":"Polygon","coordinates":[[[55.25415,-21.10974],[55.2209,-21.07737],[55.2167,-21.03785],[55.27653,-21.00109],[55.28719,-20.92377],[55.32478,-20.93543],[55.39505,-20.88184],[55.45117,-20.87174],[55.64773,-20.91561],[55.69683,-20.96581],[55.70282,-21.01805],[55.73874,-21.07151],[55.83498,-21.16044],[55.80159,-21.25972],[55.80729,-21.33676],[55.77525,-21.36552],[55.64681,-21.38936],[55.4841,-21.35238],[55.39069,-21.29216],[55.33535,-21.27776],[55.29297,-21.22979],[55.2869,-21.16087],[55.25415,-21.10974]]]}},"976":{"type":"Feature","properties":{"code":"976"},"geometry":{"type":"MultiPolygon","coordinates":[[[[45.09984,-12.80194],[45.11262,-12.79396],[45.09389,-12.78454],[45.10248,-12.76653],[45.05164,-12.75623],[45.04258,-12.74402],[45.05777,-12.72699],[45.03981,-12.72219],[45.10501,-12.65074],[45.08825,-12.67017],[45.13052,-12.70045],[45.12544,-12.72734],[45.15483,-12.73668],[45.1662,-12.71753],[45.2142,-12.73244],[45.23979,-12.76123],[45.22564,-12.77427],[45.23791,-12.78482],[45.18407,-12.84207],[45.22206,-12.8719],[45.19246,-12.90576],[45.205,-12.92014],[45.18645,-12.91703],[45.16936,-12.94303],[45.17692,-12.96537],[45.20436,-12.97456],[45.17818,-12.99497],[45.16048,-12.97259],[45.14914,-12.99977],[45.12634,-12.99567],[45.12504,-12.97991],[45.10881,-12.99389],[45.10828,-12.95724],[45.07887,-12.96253],[45.1043,-12.93282],[45.08713,-12.92989],[45.07115,-12.89932],[45.09917,-12.89861],[45.10568,-12.92321],[45.13704,-12.93814],[45.15497,-12.92356],[45.09294,-12.8531],[45.12126,-12.83966],[45.10096,-12.83416],[45.09984,-12.80194]]],[[[45.27135,-12.79331],[45.25451,-12.78111],[45.26808,-12.78945],[45.28464,-12.75883],[45.29999,-12.78423],[45.28765,-12.81726],[45.27135,-12.79331]]]]}}}
+
+// ── Config ────────────────────────────────────────────────
+let CFG={depts:'Departements',cats:'Categories',dc:'Departement_categories',colDept:'dept',colCat:'categorie'};
+function loadConfig(opts){
+  if(opts?.tableDepts)CFG.depts=opts.tableDepts;
+  if(opts?.tableCats) CFG.cats=opts.tableCats;
+  if(opts?.tableDc)   CFG.dc=opts.tableDc;
+  if(opts?.colDept)   CFG.colDept=opts.colDept;
+  if(opts?.colCat)    CFG.colCat=opts.colCat;
+}
+
+// ── Config modal ──────────────────────────────────────────
+let ALL_TABLES=[], TABLE_COLS={};
+function makeOpts(sel,list,current){
+  sel.innerHTML='<option value="">— choisir —</option>';
+  for(const{id,label}of list){const o=document.createElement('option');o.value=id;o.textContent=label;if(id===current)o.selected=true;sel.appendChild(o);}
+}
+async function loadTableCols(tableId){
+  if(!tableId||TABLE_COLS[tableId])return;
+  try{const t=await grist.docApi.fetchTable(tableId);TABLE_COLS[tableId]=Object.keys(t).filter(k=>k!=='id'&&k!=='manualSort');}
+  catch(_){TABLE_COLS[tableId]=[];}
+}
+async function onCfgTableChange(){
+  const dcId=document.getElementById('cfg-dc').value;
+  if(dcId){
+    await loadTableCols(dcId);
+    const cols=(TABLE_COLS[dcId]||[]).map(c=>({id:c,label:c}));
+    makeOpts(document.getElementById('cfg-col-dept'),cols,CFG.colDept);
+    makeOpts(document.getElementById('cfg-col-cat'),cols,CFG.colCat);
+    document.getElementById('cfg-cols').style.display='block';
+  }else document.getElementById('cfg-cols').style.display='none';
+}
+async function showConfig(){
+  document.getElementById('cfg-modal').classList.remove('gone');
+  document.getElementById('cfg-loading').style.display='block';
+  document.getElementById('cfg-form').style.display='none';
+  const msg=document.getElementById('cfg-msg');msg.className='';msg.style.display='none';
+  try{
+    const meta=await grist.docApi.fetchTable('_grist_Tables');
+    ALL_TABLES=(meta.tableId||[]).filter(id=>!String(id).startsWith('_')).map(id=>({id:String(id),label:String(id)}));
+    if(!ALL_TABLES.length)throw new Error('Aucune table trouvée');
+    makeOpts(document.getElementById('cfg-depts'),ALL_TABLES,CFG.depts);
+    makeOpts(document.getElementById('cfg-cats'),ALL_TABLES,CFG.cats);
+    makeOpts(document.getElementById('cfg-dc'),ALL_TABLES,CFG.dc);
+    if(CFG.dc){await loadTableCols(CFG.dc);const cols=(TABLE_COLS[CFG.dc]||[]).map(c=>({id:c,label:c}));makeOpts(document.getElementById('cfg-col-dept'),cols,CFG.colDept);makeOpts(document.getElementById('cfg-col-cat'),cols,CFG.colCat);document.getElementById('cfg-cols').style.display='block';}
+    document.getElementById('cfg-loading').style.display='none';
+    document.getElementById('cfg-form').style.display='block';
+  }catch(e){
+    document.getElementById('cfg-loading').style.display='none';
+    const msg=document.getElementById('cfg-msg');msg.className='err';msg.style.display='block';
+    msg.innerHTML='❌ Impossible de lire les tables : <b>'+e.message+'</b><br>👉 Paramètres du widget → <b>Accès complet au document</b>';
+  }
+}
+async function saveConfig(){
+  const c={depts:document.getElementById('cfg-depts').value,cats:document.getElementById('cfg-cats').value,dc:document.getElementById('cfg-dc').value,colDept:document.getElementById('cfg-col-dept').value||CFG.colDept,colCat:document.getElementById('cfg-col-cat').value||CFG.colCat};
+  const msg=document.getElementById('cfg-msg');
+  if(!c.depts||!c.cats){msg.className='err';msg.style.display='block';msg.textContent='⚠️ Sélectionnez au minimum les tables Départements et Catégories.';return;}
+  Object.assign(CFG,c);
+  try{await grist.setOptions({tableDepts:CFG.depts,tableCats:CFG.cats,tableDc:CFG.dc,colDept:CFG.colDept,colCat:CFG.colCat});msg.className='ok';msg.style.display='block';msg.textContent='✅ Configuration sauvegardée !';setTimeout(()=>{closeModal('cfg-modal');fetchAllTables();},700);}
+  catch(e){msg.className='err';msg.style.display='block';msg.textContent='❌ Erreur : '+e.message;}
+}
+function showGuide(){document.getElementById('guide-modal').classList.remove('gone');}
+function closeModal(id){document.getElementById(id).classList.add('gone');}
+
+// ── État ──────────────────────────────────────────────────
+const APP={mode:'categorie',uniqueColor:'#e74c3c',cumulColor:'#f39c12',useCumul:true,choroLow:'#ffffb2',choroHigh:'#d7191c',cats:[],depts:{},dcRows:{},deptRowId:{}};
+let deptFilter='all';
+let editingCatId=null; // catégorie en cours d'édition
+
+// ── Maps ──────────────────────────────────────────────────
+let mainMap,geoLayer;
+const mMaps={},mLayers={};
+const MAP_OPT={zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,touchZoom:false,attributionControl:false};
+
+function initMaps(){
+  mainMap=L.map('map',{zoomControl:true,attributionControl:false}).setView([46.5,2.5],6);
+  for(const[code,cfg]of Object.entries(DT))
+    mMaps[code]=L.map(cfg.el,MAP_OPT);
+}
+
+// ── GeoJSON ───────────────────────────────────────────────
+async function fetchJson(url){const r=await fetch(url);if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+
+async function loadGeoJSON(){
+  // 1. Charger métropole
+  let metroFeats=[];
+  try{
+    const g=await fetchJson('https://geo.api.gouv.fr/departements?fields=nom,code&format=geojson&geometry=contour');
+    if(g?.features?.length>90)metroFeats=g.features;
+  }catch(_){}
+  if(metroFeats.length<90){
+    try{const g=await fetchJson('https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements-version-simplifiee.geojson');metroFeats=g.features||[];}catch(_){}
+  }
+
+  // Exclure les DOM-TOM de la liste métro (utiliser les données embarquées)
+  const dtSet=new Set(Object.keys(DT));
+  const pureMet=metroFeats.filter(f=>!dtSet.has(String(f.properties?.code||'')));
+
+  // 2. Utiliser les GeoJSON DOM-TOM embarqués (aucune requête réseau)
+  const domtomFeats=Object.entries(DT_GEOJSON).map(([code,feat])=>{
+    const f=JSON.parse(JSON.stringify(feat));
+    if(!f.properties)f.properties={};
+    f.properties.code=code;
+    f.properties.nom=APP.depts[code]?.nom||code;
+    return f;
+  });
+
+  return{type:'FeatureCollection',features:[...pureMet,...domtomFeats]};
+}
+
+// ── Style ─────────────────────────────────────────────────
+function deptColor(code){
+  const d=APP.depts[code];if(!d)return null;
+  if(APP.mode==='unique')return APP.uniqueColor;
+  if(APP.mode==='choropleth'){
+    const vals=Object.values(APP.depts).map(x=>x.valeur).filter(v=>typeof v==='number'&&!isNaN(v));
+    if(!vals.length)return null;
+    const mn=Math.min(...vals),mx=Math.max(...vals);
+    if(mn===mx)return APP.choroHigh;
+    return chroma.scale([APP.choroLow,APP.choroHigh]).mode('lab')((d.valeur-mn)/(mx-mn)).hex();
+  }
+  const active=APP.cats.filter(c=>c.active);
+  const matched=active.filter(c=>d.catIds.includes(c._id));
+  if(!matched.length)return null;
+  if(matched.length===1)return col(matched[0].couleur)||NAMED.bleu;
+  if(!APP.useCumul)return col(matched[0].couleur)||NAMED.bleu;
+  return APP.cumulColor;
+}
+
+function getStyle(f){
+  const code=String(f.properties?.code||'');
+  const d=APP.depts[code];
+  const vis=d?d.visible:true;
+  if(!vis)return{color:'#aaa',weight:0.5,fillColor:'#cccccc',fillOpacity:0.6,opacity:0.6};
+  const c=deptColor(code);
+  return{color:'#555',weight:0.7,fillColor:c||'#c8d6e5',fillOpacity:c?0.82:0.3,opacity:1};
+}
+
+function makeOnEach(){
+  return function(feat,layer){
+    const code=String(feat.properties?.code||''),nom=feat.properties?.nom||APP.depts[code]?.nom||code;
+    layer.bindTooltip(`<b>${nom}</b> (${code})`,{sticky:true,opacity:0.9});
+    layer.on({
+      mouseover(e){
+        e.target.setStyle({weight:2,color:'#111'});e.target.bringToFront();
+        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>c.nom).join(', '):'';
+        const tip=document.getElementById('tip');
+        tip.innerHTML=`<b>${nom}</b> (${code})`+(cats?`<br><span style="font-size:10px;color:#666">${cats}</span>`:'');
+        tip.classList.add('show');
+      },
+      mouseout(e){
+        e.target.setStyle(getStyle(feat));
+        document.getElementById('tip').classList.remove('show');
+      },
+      click(){mainMap.fitBounds(layer.getBounds(),{padding:[30,30]});}
+    });
+  };
+}
+
+function renderMap(geojson){
+  if(geoLayer){mainMap.removeLayer(geoLayer);geoLayer=null;}
+  for(const c of Object.keys(DT)){if(mLayers[c]){mMaps[c].removeLayer(mLayers[c]);delete mLayers[c];}}
+
+  const dtSet=new Set(Object.keys(DT));
+  const feats=geojson?.features||[];
+  const metroFeats=feats.filter(f=>!dtSet.has(String(f.properties?.code||'')));
+  const dtF={};
+  for(const f of feats){const c=String(f.properties?.code||'');if(dtSet.has(c))dtF[c]=f;}
+
+  geoLayer=L.geoJSON({type:'FeatureCollection',features:metroFeats},{style:f=>getStyle(f),onEachFeature:makeOnEach()}).addTo(mainMap);
+
+  for(const[code,feat]of Object.entries(dtF)){
+    if(!mMaps[code])continue;
+    const layer=L.geoJSON({type:'FeatureCollection',features:[feat]},{style:f=>getStyle(f),onEachFeature:makeOnEach()}).addTo(mMaps[code]);
+    mLayers[code]=layer;
+    // Auto-zoom sur le département
+    try{mMaps[code].fitBounds(layer.getBounds(),{padding:[4,4]});}catch(_){}
+    mMaps[code].invalidateSize();
+  }
+  renderLegend();
+}
+
+function refresh(){
+  if(geoLayer)geoLayer.eachLayer(l=>l.setStyle(getStyle(l.feature)));
+  for(const layer of Object.values(mLayers))layer.eachLayer(l=>l.setStyle(getStyle(l.feature)));
+  renderLegend();
+}
+
+// ── Légende ───────────────────────────────────────────────
+function renderLegend(){
+  const el=document.getElementById('li');el.innerHTML='';
+  if(APP.mode==='unique'){el.innerHTML=`<div class="lr"><div class="ld" style="background:${APP.uniqueColor}"></div>Tous visibles</div>`;return;}
+  if(APP.mode==='choropleth'){el.innerHTML=`<div style="height:10px;width:110px;border-radius:3px;background:linear-gradient(to right,${APP.choroLow},${APP.choroHigh});margin-bottom:3px"></div><div style="display:flex;justify-content:space-between;font-size:9px;color:#888"><span>min</span><span>max</span></div>`;return;}
+  const active=APP.cats.filter(c=>c.active);
+  if(!active.length){el.innerHTML='<span style="color:#aaa;font-size:10px">Aucune catégorie active</span>';return;}
+  for(const c of active){const co=col(c.couleur)||NAMED.bleu;el.innerHTML+=`<div class="lr"><div class="ld" style="background:${co}"></div>${c.nom}</div>`;}
+  if(active.length>1&&APP.useCumul)el.innerHTML+=`<div class="lr"><div class="ld" style="background:${APP.cumulColor};border-style:dashed"></div><i>Cumul</i></div>`;
+}
+
+// ── Catégories : rendu + édition ──────────────────────────
+function colorChips(selectedHex){
+  return NAMED_COLORS.map(({k,v})=>`<div class="col-chip${selectedHex===v?' sel':''}" style="background:${v}" title="${k}" onclick="pickColor('${v}','${k}')"></div>`).join('');
+}
+function pickColor(hex,name){
+  document.querySelectorAll('.col-chip').forEach(c=>c.classList.toggle('sel',c.style.background===hex||c.style.backgroundColor===hex));
+  const hx=document.getElementById('edit-hex');if(hx){hx.value=hex;}
+}
+
+function renderCats(){
+  const el=document.getElementById('cl');
+  document.getElementById('cbadge').textContent=APP.cats.length?`(${APP.cats.length})`:'';
+  if(!APP.cats.length){el.innerHTML='<div class="nc">Aucune catégorie dans Grist.</div>';return;}
+  el.innerHTML='';
+  for(const cat of APP.cats){
+    const co=col(cat.couleur);
+    const coD=co||'#bbb';
+    if(editingCatId===cat._id){
+      // Mode édition inline
+      const div=document.createElement('div');
+      div.className='cat-edit-row';
+      div.innerHTML=`
+        <input type="text" id="edit-cat-name" value="${cat.nom.replace(/"/g,'&quot;')}" placeholder="Nom de la catégorie">
+        <div class="col-row">${colorChips(co||'')}</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
+          HEX : <input type="text" class="col-hex" id="edit-hex" value="${co||cat.couleur||''}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
+        </div>
+        <div class="cat-edit-btns">
+          <button class="btn-sm" onclick="cancelEdit()">Annuler</button>
+          <button class="btn-sm ok" onclick="saveCatEdit(${cat._id})">✓ Enregistrer</button>
+        </div>`;
+      el.appendChild(div);
+    }else{
+      const row=document.createElement('div');
+      row.className='cr'+(cat.active?' on':'');
+      row.innerHTML=`
+        <input type="checkbox" class="cchk" ${cat.active?'checked':''} onchange="toggleCat(${cat._id},this.checked)">
+        <div class="csw" style="background:${coD}" title="${cat.couleur||''}${!co?' (couleur non reconnue)':''}"></div>
+        <span class="cn" title="${cat.nom}">${cat.nom}</span>
+        ${!co?`<span style="font-size:9px;color:#e74c3c" title="Couleur non reconnue: ${cat.couleur}. Cliquez ✏️ pour corriger.">⚠️</span>`:''}
+        <button class="cedit" onclick="startEditCat(${cat._id})" title="Éditer nom/couleur">✏️</button>`;
+      el.appendChild(row);
+    }
+  }
+}
+
+function startEditCat(catId){editingCatId=catId;renderCats();}
+function cancelEdit(){editingCatId=null;renderCats();}
+
+async function saveCatEdit(catId){
+  const name=document.getElementById('edit-cat-name').value.trim();
+  const hexInput=document.getElementById('edit-hex').value.trim();
+  // Chercher si une chip est sélectionnée
+  const selChip=document.querySelector('.col-chip.sel');
+  const chosenHex=selChip?selChip.style.backgroundColor:(hexInput||null);
+  // Convertir rgb(...) → hex si nécessaire
+  function rgbToHex(rgb){const m=rgb.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);if(!m)return rgb;return'#'+[m[1],m[2],m[3]].map(x=>parseInt(x).toString(16).padStart(2,'0')).join('');}
+  const finalColor=chosenHex?(chosenHex.startsWith('rgb')?rgbToHex(chosenHex):chosenHex):null;
+  // Chercher le nom de la couleur correspondant au hex
+  const colName=Object.entries(NAMED).find(([,v])=>v===finalColor)?.[0]||finalColor||'';
+  if(!name){alert('Le nom ne peut pas être vide.');return;}
+  const updates={};
+  if(name)updates.nom=name;
+  if(colName)updates.couleur=colName;
+  try{await grist.docApi.applyUserActions([['UpdateRecord',CFG.cats,catId,updates]]);}
+  catch(e){console.warn('saveCatEdit:',e.message);}
+  editingCatId=null;
+  await fetchAllTables();
+}
+
+async function addCat(){
+  const name=document.getElementById('new-cat-name').value.trim();
+  if(!name)return;
+  try{await grist.docApi.applyUserActions([['AddRecord',CFG.cats,null,{nom:name,couleur:'bleu',active:false}]]);}
+  catch(e){console.warn('addCat:',e.message);}
+  document.getElementById('new-cat-name').value='';
+  await fetchAllTables();
+}
+
+// ── Régions ───────────────────────────────────────────────
+function buildRegionFilter(){
+  const regions=new Map();
+  for(const d of Object.values(APP.depts)){
+    if(d.nom_region&&!regions.has(d.nom_region))regions.set(d.nom_region,d.code_region||'');
+  }
+  const sel=document.getElementById('reg-filter');
+  const current=sel.value;
+  sel.innerHTML='<option value="">— Toutes les régions —</option>';
+  [...regions.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([nom])=>{
+    const o=document.createElement('option');o.value=nom;o.textContent=nom;if(nom===current)o.selected=true;sel.appendChild(o);
+  });
+}
+
+// ── Liste départements ────────────────────────────────────
+function sk(c){if(c==='2A')return 20.1;if(c==='2B')return 20.2;const n=parseInt(c,10);return isNaN(n)?999:n;}
+function setF(f,btn){deptFilter=f;document.querySelectorAll('.fb').forEach(b=>b.classList.remove('on'));btn.classList.add('on');renderDepts();}
+
+function getFilteredList(){
+  const search=document.getElementById('dsearch').value.toLowerCase();
+  const region=document.getElementById('reg-filter').value;
+  let list=Object.values(APP.depts).sort((a,b)=>sk(a.code)-sk(b.code));
+  if(search)list=list.filter(d=>d.nom.toLowerCase().includes(search)||d.code.toLowerCase().includes(search));
+  if(region)list=list.filter(d=>d.nom_region===region);
+  if(deptFilter==='sel')list=list.filter(d=>d.catIds.length>0);
+  if(deptFilter==='vis')list=list.filter(d=>d.visible);
+  if(deptFilter==='hid')list=list.filter(d=>!d.visible);
+  return list;
+}
+
+function renderDepts(){
+  const wrap=document.getElementById('dw');
+  const list=getFilteredList();
+  document.getElementById('dbadge').textContent=`(${list.length}/${Object.keys(APP.depts).length})`;
+  const activeCats=APP.cats.filter(c=>c.active);
+  wrap.innerHTML='';
+  for(const d of list){
+    const row=document.createElement('div');
+    row.className='dr'+(d.visible?'':' gray');
+    const dots=activeCats.map(cat=>{
+      const on=d.catIds.includes(cat._id);
+      const co=col(cat.couleur)||NAMED.bleu;
+      return `<div class="cdot" title="${cat.nom}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat('${d.code}',${cat._id})"></div>`;
+    }).join('');
+    row.innerHTML=`<input type="checkbox" class="dvis" ${d.visible?'checked':''} title="Visible/grisé" onchange="toggleVis('${d.code}',this.checked)"><span class="dc">${d.code}</span><span class="dn">${d.nom}</span><div class="dcs">${dots||'<span style="font-size:10px;color:#bbb">—</span>'}</div>`;
+    wrap.appendChild(row);
+  }
+}
+
+// ── Actions groupées ──────────────────────────────────────
+async function bulkDeptCat(add){
+  const activeCats=APP.cats.filter(c=>c.active);
+  if(!activeCats.length){alert('Cochez d\'abord au moins une catégorie.');return;}
+  const list=getFilteredList();
+  const actions=[];
+  for(const d of list){
+    for(const cat of activeCats){
+      const exists=Object.entries(APP.dcRows).find(([,v])=>v.dept_id===d._id&&v.cat_id===cat._id);
+      if(add&&!exists){const rec={};rec[CFG.colDept]=d._id;rec[CFG.colCat]=cat._id;actions.push(['AddRecord',CFG.dc,null,rec]);}
+      if(!add&&exists)actions.push(['RemoveRecord',CFG.dc,parseInt(exists[0])]);
+    }
+  }
+  if(!actions.length)return;
+  try{
+    // Envoyer par lots de 50
+    for(let i=0;i<actions.length;i+=50)await grist.docApi.applyUserActions(actions.slice(i,i+50));
+  }catch(e){console.warn('bulkDeptCat:',e.message);}
+  await fetchAllTables();
+}
+
+async function bulkVis(val){
+  const list=getFilteredList();
+  const actions=list.map(d=>['UpdateRecord',CFG.depts,d._id,{visible:val}]);
+  if(!actions.length)return;
+  try{for(let i=0;i<actions.length;i+=50)await grist.docApi.applyUserActions(actions.slice(i,i+50));}
+  catch(e){console.warn('bulkVis:',e.message);}
+  await fetchAllTables();
+}
+
+// ── Interactions → Grist ──────────────────────────────────
+async function toggleCat(catId,val){
+  try{await grist.docApi.applyUserActions([['UpdateRecord',CFG.cats,catId,{active:val}]]);}
+  catch(e){console.warn('toggleCat:',e.message);}
+  await fetchAllTables();
+}
+async function toggleVis(code,val){
+  const rowId=APP.deptRowId[code];if(!rowId)return;
+  try{await grist.docApi.applyUserActions([['UpdateRecord',CFG.depts,rowId,{visible:val}]]);}
+  catch(e){console.warn('toggleVis:',e.message);}
+  await fetchAllTables();
+}
+async function toggleDeptCat(code,catId){
+  const deptRowId=APP.deptRowId[code];if(!deptRowId)return;
+  const existing=Object.entries(APP.dcRows).find(([,v])=>v.dept_id===deptRowId&&v.cat_id===catId);
+  try{
+    if(existing){await grist.docApi.applyUserActions([['RemoveRecord',CFG.dc,parseInt(existing[0])]]);}
+    else{const rec={};rec[CFG.colDept]=deptRowId;rec[CFG.colCat]=catId;await grist.docApi.applyUserActions([['AddRecord',CFG.dc,null,rec]]);}
+  }catch(e){console.warn('toggleDeptCat:',e.message);}
+  await fetchAllTables();
+}
+
+// ── Mode / UI ─────────────────────────────────────────────
+function setMode(m,btn){
+  APP.mode=m;
+  document.querySelectorAll('.hbtn[onclick^="setMode"]').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('uc-wrap').classList.toggle('show',m==='unique');
+  document.getElementById('ch-wrap').classList.toggle('show',m==='choropleth');
+  renderDepts();refresh();
+}
+function tog(h){const b=h.nextElementSibling,a=h.querySelector('.arr');b.classList.toggle('closed');a.textContent=b.classList.contains('closed')?'▸':'▾';}
+
+// ── Fetch tables Grist ────────────────────────────────────
+function findCol(t,...cs){for(const c of cs)if(t[c]!==undefined)return c;return null;}
+
+async function fetchAllTables(){
+  let missing=[];
+  let dTable=null,cTable=null,dcTable=null;
+  try{dTable=await grist.docApi.fetchTable(CFG.depts);}catch(_){}
+  try{cTable=await grist.docApi.fetchTable(CFG.cats);}catch(_){}
+  try{if(CFG.dc)dcTable=await grist.docApi.fetchTable(CFG.dc);}catch(_){}
+
+  // Départements
+  APP.depts={};APP.deptRowId={};
+  if(dTable){
+    const colCode=findCol(dTable,'code_dept','code','Code','num_dep');
+    const colNom=findCol(dTable,'nom_dept','nom','name','Nom','Name');
+    const colVis=findCol(dTable,'visible','Visible','actif');
+    const colVal=findCol(dTable,'valeur','Valeur','value','Value');
+    const colReg=findCol(dTable,'nom_region','region','Region','nom_reg','r_gion');
+    const colRegCode=findCol(dTable,'code_region','code_reg');
+    const ids=dTable.id||[];
+    for(let i=0;i<ids.length;i++){
+      const code=colCode?String(dTable[colCode][i]||'').trim():'';if(!code)continue;
+      const rawVis=colVis?dTable[colVis][i]:true;
+      APP.depts[code]={_id:ids[i],code,nom:colNom?String(dTable[colNom][i]||code):code,visible:(rawVis===true||rawVis===1),valeur:colVal?dTable[colVal][i]??null:null,catIds:[],nom_region:colReg?String(dTable[colReg][i]||''):'',code_region:colRegCode?String(dTable[colRegCode][i]||''):''};
+      APP.deptRowId[code]=ids[i];
+    }
+  }else missing.push(`Départements (${CFG.depts})`);
+
+  // Catégories
+  APP.cats=[];
+  if(cTable){
+    const colNom=findCol(cTable,'nom','name','Nom','Name','label');
+    const colCol=findCol(cTable,'couleur','color','Color','Couleur');
+    const colAct=findCol(cTable,'active','Active','selectionnee','S_lection','s_lection','selection','Selection','selected','actif','Actif','visible','Visible');
+    const ids=cTable.id||[];
+    for(let i=0;i<ids.length;i++){
+      const rawAct=colAct?cTable[colAct][i]:false;
+      APP.cats.push({_id:ids[i],nom:colNom?String(cTable[colNom][i]||`Cat${ids[i]}`):String(ids[i]),couleur:colCol?String(cTable[colCol][i]||'bleu'):'bleu',active:(rawAct===true||rawAct===1)});
+    }
+  }else missing.push(`Catégories (${CFG.cats})`);
+
+  // Affiliations
+  APP.dcRows={};
+  if(dcTable){
+    const colD=findCol(dcTable,CFG.colDept,'dept','Dept','departement','Departement');
+    const colC=findCol(dcTable,CFG.colCat,'categorie','Categorie','cat','Categories');
+    const ids=dcTable.id||[];
+    for(let i=0;i<ids.length;i++){
+      const rowId=ids[i],deptId=colD?dcTable[colD][i]:null,catId=colC?dcTable[colC][i]:null;
+      if(!deptId||!catId)continue;
+      APP.dcRows[rowId]={dept_id:deptId,cat_id:catId};
+      const entry=Object.values(APP.depts).find(d=>d._id===deptId);
+      if(entry&&!entry.catIds.includes(catId))entry.catIds.push(catId);
+    }
+  }
+
+  // Bannière
+  const banner=document.getElementById('cfg-banner');
+  if(missing.length){document.getElementById('cfg-banner-msg').textContent='Tables non trouvées : '+missing.join(', ');banner.classList.add('show');}
+  else banner.classList.remove('show');
+
+  buildRegionFilter();
+  renderCats();
+  renderDepts();
+  refresh();
+}
+
+// ── Boot ──────────────────────────────────────────────────
+async function boot(){
+  initMaps();
+  document.getElementById('cumsw').style.background=APP.cumulColor;
+
+  document.getElementById('ldg').classList.remove('gone');
+  document.getElementById('ldg-msg').textContent='Chargement de la carte…';
+  let geo;
+  try{geo=await loadGeoJSON();renderMap(geo);}
+  catch(e){document.getElementById('ldg-msg').textContent='Erreur carte: '+e.message;}
+  document.getElementById('ldg').classList.add('gone');
+
+  grist.ready({requiredAccess:'full'});
+
+  let optionsLoaded=false;
+  grist.onOptions(async(opts)=>{
+    if(opts&&Object.keys(opts).length>0)loadConfig(opts);
+    optionsLoaded=true;
+    await fetchAllTables();
+  });
+  setTimeout(async()=>{if(!optionsLoaded){optionsLoaded=true;await fetchAllTables();}},2000);
+
+  grist.onRecords(async()=>fetchAllTables());
+  grist.onRecord(async()=>fetchAllTables());
+
+  setTimeout(()=>{mainMap.invalidateSize();for(const m of Object.values(mMaps))m.invalidateSize();},400);
+}
+
+new ResizeObserver(()=>{if(mainMap)mainMap.invalidateSize();for(const m of Object.values(mMaps))m.invalidateSize();}).observe(document.getElementById('mp'));
+window.addEventListener('DOMContentLoaded',boot);
+</script>
+</body>
+</html>
