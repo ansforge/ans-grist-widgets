@@ -8,4 +8,5 @@ Ce widget est un fork de [carte-france](https://github.com/Bigorneau15652/map/tr
 Il a en particulier été enrichi des besoins relatifs aux produits du domaine Urgences.
 
 * Option pour afficher les numéros de départements sur la carte
+* Gestion des entités 64A/64B et 76A/76B
 
