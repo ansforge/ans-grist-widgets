@@ -11,3 +11,16 @@ Il a en particulier été enrichi des besoins relatifs aux produits du domaine U
 * Gestion des entités 64A/64B et 76A/76B
 * Gestion des catégories représentées par des emojis
 
+## Ajouter un widget personnalisé dans une vue Grist
+
+1) Ajouter une vue personnalisée à la page
+![](docs/img/custom-widget-0.png)
+
+3) Choisir le widget URL personnalisée
+![](docs/img/custom-widget-1.png)
+
+4) Renseigner l'URL du widget personnalisé
+![](docs/img/custom-widget-2.png)
+
+
+
