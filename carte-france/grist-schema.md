@@ -22,8 +22,11 @@
 | `couleur` | Text | Couleur : nom FR (`rouge`, `bleu`…) ou HEX (`#e74c3c`) |
 | `couleur_cumul` | Text | Couleur si ce dept est dans plusieurs catégories sélectionnées (optionnel, sinon couleur cumul globale du widget) |
 | `selectionnee` | Bool | `true` = catégorie active sur la carte |
+| `emoji` | Text | Optionnel. Si renseigné (ex : `🐄`), la catégorie ne colore pas le fond de carte : son emoji est affiché sous le numéro du département (si l'échelle le permet). Plusieurs catégories emoji sont séparées par un espace. |
 
 **Couleurs nommées disponibles :** bleu, rouge, vert, jaune, orange, violet, rose, marron, gris, noir, blanc, cyan
+
+**Couleur + emojis :** un département peut appartenir à une catégorie « couleur » (fond de carte) et à plusieurs catégories « emoji » à la fois. Les emojis ne s'affichent pas sur les départements grisés (`visible = false`).
 
 **Exemple :**
 ```
