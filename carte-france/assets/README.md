@@ -13,3 +13,7 @@ Ne pas modifier ces fichiers à la main : les remplacer par une nouvelle version
 Les images de Leaflet (`images/`) ne sont pas utilisées actuellement (pas de marqueurs par défaut ni de sélecteur de calques) ; elles sont gardées pour que `leaflet.css` reste complet.
 
 `grist-plugin-api.js` reste volontairement chargé depuis `docs.getgrist.com` : il doit rester compatible avec la version de Grist qui affiche le widget.
+
+## Politique de sécurité (CSP)
+
+`index.html` déclare une Content-Security-Policy qui n'autorise que les ressources de son propre site, plus le script `https://docs.getgrist.com`. Toute nouvelle ressource externe (script, image, `fetch`…) sera **bloquée** tant qu'elle n'est pas ajoutée à la balise `<meta http-equiv="Content-Security-Policy">` — préférer l'ajouter dans ce dossier.
