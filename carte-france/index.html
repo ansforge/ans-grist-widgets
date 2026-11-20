@@ -235,8 +235,8 @@
       <div class="sec" id="ds">
         <div class="sh" onclick="tog(this)">📍 Départements <span id="dbadge" style="font-weight:400;font-size:10px;color:#888;margin-left:4px"></span><span class="arr">▾</span></div>
         <div class="sb">
-          <input type="text" id="dsearch" placeholder="Rechercher (nom ou code)…" oninput="renderDepts()">
-          <select id="reg-filter" onchange="renderDepts();highlightRegion()">
+          <input type="text" id="dsearch" placeholder="Rechercher (nom ou code)…" oninput="renderDepts();highlightDept()">
+          <select id="reg-filter" onchange="renderDepts();highlightRegion();highlightDept()">
             <option value="">— Toutes les régions —</option>
           </select>
           <div class="fbs">
@@ -335,6 +335,7 @@
           <li>Cliquez la <b>pastille colorée</b> d'un département → ajoute/retire de la catégorie</li>
           <li>Décochez ☑ à gauche → le département devient grisé sur la carte</li>
           <li>Filtrez par région → son contour est surligné en gras sur la carte ; sélectionnez tout en un clic</li>
+          <li>Recherchez un département (code ou nom) → son contour est surligné : en gras seul, moitié moins épais dans la région filtrée, aucun s'il n'appartient pas à cette région</li>
           <li>Bouton <b>N°</b> (en haut) → affiche/masque le numéro des départements sur la carte. Les plus petits n'apparaissent qu'en zoomant</li>
         </ul>
       </div>
@@ -854,6 +855,33 @@ async function highlightRegion(){
   if(f)regionLayers.push({map:mainMap,layer:L.geoJSON(f,REGION_STYLE).addTo(mainMap)});
 }
 
+// Contour en gras du département recherché (champ de recherche)
+// - sans filtre de région : même épaisseur que la région
+// - avec filtre de région : moitié moins épais, et seulement s'il appartient à la région
+let deptLayers=[];         // [{map,layer}] actuellement dessinés
+// Département désigné par la recherche : correspondance exacte (code ou nom), sinon résultat unique
+function searchedDept(){
+  const q=normTxt(document.getElementById(`dsearch`).value);
+  if(!q)return null;
+  const all=Object.values(APP.depts);
+  const exact=all.find(d=>normTxt(d.code)===q||normTxt(d.nom)===q);
+  if(exact)return exact;
+  const hits=all.filter(d=>normTxt(d.nom).includes(q)||normTxt(d.code).includes(q));
+  return hits.length===1?hits[0]:null;
+}
+function highlightDept(){
+  for(const{map,layer}of deptLayers)map.removeLayer(layer);
+  deptLayers=[];
+  const d=searchedDept();if(!d)return;
+  const region=document.getElementById(`reg-filter`).value;
+  if(region&&d.nom_region!==region)return;   // hors de la région filtrée : incohérent, pas de contour
+  const weight=REGION_STYLE.style.weight/(region?2:1);
+  const opts={...REGION_STYLE,style:{...REGION_STYLE.style,weight}};
+  const draw=(map,l)=>deptLayers.push({map,layer:L.geoJSON(l.toGeoJSON(),opts).addTo(map)});
+  if(mLayers[d.code])draw(mMaps[d.code],mLayers[d.code]);
+  else if(geoLayer)geoLayer.eachLayer(l=>{if(String(l.feature?.properties?.code||``)===d.code)draw(mainMap,l);});
+}
+
 // ── Liste départements ────────────────────────────────────
 function sk(c){
   if(c===`2A`)return 20.1;if(c===`2B`)return 20.2;
@@ -1028,6 +1056,7 @@ async function fetchAllTables(){
   renderDepts();
   // Redessine les contours si la table passe de 64 à 64A/64B (ou inversement), idem pour 76
   if(GEO&&splitKey()!==renderedSplitKey)renderMap(GEO);
+  highlightDept();
   refresh();
 }
 
