@@ -1,0 +1,24 @@
+# Contrôle de sécurité : toute construction de HTML des widgets passe par html`…` / setHtml().
+# Rendre ce contrôle obligatoire : Settings → Branches → règle de protection de main →
+# « Require status checks to pass » → cocher « check-html ».
+name: check-html
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-html:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check

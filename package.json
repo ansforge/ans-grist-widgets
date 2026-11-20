@@ -1,0 +1,18 @@
+{
+  "name": "ans-grist-widgets",
+  "private": true,
+  "type": "module",
+  "description": "Outillage de contrôle des widgets Grist (non utilisé à l'exécution des widgets)",
+  "scripts": {
+    "check:html": "node tools/check-html.mjs carte-france/index.html",
+    "test:tools": "node --test tools/check-html.test.mjs",
+    "check": "npm run test:tools && npm run check:html"
+  },
+  "devDependencies": {
+    "acorn": "8.14.0",
+    "acorn-walk": "8.3.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
