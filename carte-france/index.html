@@ -3,6 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Politique de sécurité : empêche la page d'envoyer des données ailleurs que vers son propre site.
+    - connect-src / img-src 'self' : pas de fetch, XHR, WebSocket ni image vers un domaine tiers
+    - script-src : scripts locaux + plugin Grist uniquement.
+      'unsafe-inline' : script et gestionnaires onclick inline de la page.
+      'unsafe-eval'   : requis par grist-plugin-api.js (bundle webpack en mode « eval »).
+    - Le dialogue avec Grist passe par postMessage, non concerné par la CSP.
+    Toute nouvelle ressource externe doit être ajoutée ici, sinon elle sera bloquée.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://docs.getgrist.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Carte de France – Widget Grist</title>
   <!-- Dépendances embarquées (voir assets/README.md) -->
   <link rel="stylesheet" href="assets/leaflet.css"/>
@@ -315,7 +325,7 @@
           <tr><td><code>Departement_categories</code></td><td><code>dept</code> (Réf→Depts), <code>categorie</code> (Réf→Cats)</td></tr>
         </table>
         <p style="margin-top:5px"><b>64 et 76 découpés</b> : remplacez la ligne <code>64</code> par <code>64A</code> (Pays basque, arr. de Bayonne) et <code>64B</code> (Béarn, arr. de Pau et d'Oloron), et la ligne <code>76</code> par <code>76A</code> (arr. de Rouen et de Dieppe) et <code>76B</code> (arr. du Havre). La carte s'adapte automatiquement.</p>
-        <p style="margin-top:5px">CSV des 101 départements :<br><code>https://bigorneau15652.github.io/map/carte-france/departements.csv</code></p>
+        <p style="margin-top:5px">CSV des 101 départements :<br><code>https://ansforge.github.io/ans-grist-widgets/carte-france/departements.csv</code></p>
       </div>
       <div class="guide-section">
         <h3>🔌 Ajouter le widget</h3>
@@ -365,7 +375,10 @@ function col(raw){
 function isEmoCat(c){return !!c.emoji;}
 function activeColorCats(){return APP.cats.filter(c=>c.active&&!isEmoCat(c));}
 function activeEmoCats(){return APP.cats.filter(c=>c.active&&isEmoCat(c));}
-function esc(s){return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+// Sécurité : toute donnée venant de Grist insérée dans du HTML doit passer par esc(),
+// et par jsArg() si elle est un argument de gestionnaire inline (onclick="f(…)")
+function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function jsArg(s){return esc(JSON.stringify(String(s??'')));}
 // Emojis à afficher pour un département (catégories emoji actives auxquelles il appartient)
 function deptEmojis(code){
   const d=APP.depts[code];if(!d||!d.visible)return [];
@@ -455,7 +468,7 @@ async function showConfig(){
   }catch(e){
     document.getElementById('cfg-loading').style.display='none';
     const msg=document.getElementById('cfg-msg');msg.className='err';msg.style.display='block';
-    msg.innerHTML='❌ Impossible de lire les tables : <b>'+e.message+'</b><br>👉 Paramètres du widget → <b>Accès complet au document</b>';
+    msg.innerHTML='❌ Impossible de lire les tables : <b>'+esc(e.message)+'</b><br>👉 Paramètres du widget → <b>Accès complet au document</b>';
   }
 }
 async function saveConfig(){
@@ -635,13 +648,13 @@ function getStyle(f){
 function makeOnEach(){
   return function(feat,layer){
     const code=String(feat.properties?.code||''),nom=feat.properties?.nom||APP.depts[code]?.nom||code;
-    layer.bindTooltip(`<b>${nom}</b> (${code})`,{sticky:true,opacity:0.9});
+    layer.bindTooltip(`<b>${esc(nom)}</b> (${esc(code)})`,{sticky:true,opacity:0.9});
     layer.on({
       mouseover(e){
         e.target.setStyle({weight:2,color:'#111'});e.target.bringToFront();
-        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>(c.emoji?c.emoji+' ':'')+esc(c.nom)).join(', '):'';
+        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>(c.emoji?esc(c.emoji)+' ':'')+esc(c.nom)).join(', '):'';
         const tip=document.getElementById('tip');
-        tip.innerHTML=`<b>${nom}</b> (${code})`+(cats?`<br><span style="font-size:10px;color:#666">${cats}</span>`:'');
+        tip.innerHTML=`<b>${esc(nom)}</b> (${esc(code)})`+(cats?`<br><span style="font-size:10px;color:#666">${cats}</span>`:'');
         tip.classList.add('show');
       },
       mouseout(e){
@@ -732,10 +745,10 @@ function renderCats(){
       const div=document.createElement('div');
       div.className='cat-edit-row';
       div.innerHTML=`
-        <input type="text" id="edit-cat-name" value="${cat.nom.replace(/"/g,'&quot;')}" placeholder="Nom de la catégorie">
+        <input type="text" id="edit-cat-name" value="${esc(cat.nom)}" placeholder="Nom de la catégorie">
         <div class="col-row">${colorChips(co||'')}</div>
         <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
-          HEX : <input type="text" class="col-hex" id="edit-hex" value="${co||cat.couleur||''}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
+          HEX : <input type="text" class="col-hex" id="edit-hex" value="${esc(co||cat.couleur||'')}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
         </div>
         <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
           Emoji : <input type="text" class="col-hex" id="edit-emoji" style="width:52px;font-size:13px;font-family:inherit" value="${esc(cat.emoji||'')}" placeholder="🐄">
@@ -914,11 +927,11 @@ function renderDepts(){
     row.className='dr'+(d.visible?'':' gray');
     const dots=activeCats.map(cat=>{
       const on=d.catIds.includes(cat._id);
-      if(isEmoCat(cat))return `<div class="cdot emo${on?' on':''}" title="${esc(cat.nom)}" onclick="toggleDeptCat('${d.code}',${cat._id})">${esc(cat.emoji)}</div>`;
+      if(isEmoCat(cat))return `<div class="cdot emo${on?' on':''}" title="${esc(cat.nom)}" onclick="toggleDeptCat(${jsArg(d.code)},${cat._id})">${esc(cat.emoji)}</div>`;
       const co=col(cat.couleur)||NAMED.bleu;
-      return `<div class="cdot" title="${esc(cat.nom)}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat('${d.code}',${cat._id})"></div>`;
+      return `<div class="cdot" title="${esc(cat.nom)}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat(${jsArg(d.code)},${cat._id})"></div>`;
     }).join('');
-    row.innerHTML=`<input type="checkbox" class="dvis" ${d.visible?'checked':''} title="Visible/grisé" onchange="toggleVis('${d.code}',this.checked)"><span class="dc">${d.code}</span><span class="dn">${d.nom}</span><div class="dcs">${dots||'<span style="font-size:10px;color:#bbb">—</span>'}</div>`;
+    row.innerHTML=`<input type="checkbox" class="dvis" ${d.visible?'checked':''} title="Visible/grisé" onchange="toggleVis(${jsArg(d.code)},this.checked)"><span class="dc">${esc(d.code)}</span><span class="dn">${esc(d.nom)}</span><div class="dcs">${dots||'<span style="font-size:10px;color:#bbb">—</span>'}</div>`;
     wrap.appendChild(row);
   }
 }
@@ -1026,7 +1039,7 @@ async function fetchAllTables(){
     for(let i=0;i<ids.length;i++){
       const rawAct=colAct?cTable[colAct][i]:false;
       const emoji=colEmo?String(cTable[colEmo][i]??'').trim():'';
-      APP.cats.push({_id:ids[i],nom:colNom?String(cTable[colNom][i]||`Cat${ids[i]}`):String(ids[i]),couleur:colCol?String(cTable[colCol][i]||'bleu'):'bleu',active:(rawAct===true||rawAct===1),emoji});
+      APP.cats.push({_id:Number(ids[i])|0,nom:colNom?String(cTable[colNom][i]||`Cat${ids[i]}`):String(ids[i]),couleur:colCol?String(cTable[colCol][i]||'bleu'):'bleu',active:(rawAct===true||rawAct===1),emoji});
     }
   }else{APP.colEmoji=null;missing.push(`Catégories (${CFG.cats})`);}
 
