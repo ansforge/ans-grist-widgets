@@ -14,6 +14,19 @@ Les images de Leaflet (`images/`) ne sont pas utilisées actuellement (pas de ma
 
 `grist-plugin-api.js` reste volontairement chargé depuis `docs.getgrist.com` : il doit rester compatible avec la version de Grist qui affiche le widget.
 
+## Empreintes (SRI)
+
+`index.html` vérifie l'empreinte SHA-384 de chaque fichier de ce dossier (attribut `integrity` des balises `<link>`/`<script>`, et table `ASSET_SRI` pour les GeoJSON). Un fichier dont un seul octet change est **refusé par le navigateur** : la carte ne s'affiche plus.
+
+- Le fichier `.gitattributes` à la racine désactive toute conversion de fin de ligne dans ce dossier : ne pas le supprimer, sinon Git modifie les octets (CRLF) et les empreintes ne correspondent plus.
+- `leaflet.js` et `leaflet.css` sont identiques à la publication officielle de Leaflet 1.9.4 (empreintes SHA-256 publiées par Leaflet : `20nQCchB…lvTlZBo=` et `p4NxAoJB…TRR9BMY=`).
+
+**Mettre à jour un fichier** : télécharger la nouvelle version, puis recalculer son empreinte et la reporter dans `index.html` :
+
+```powershell
+$b=[IO.File]::ReadAllBytes("carte-france\assets\<fichier>"); 'sha384-'+[Convert]::ToBase64String([Security.Cryptography.SHA384]::Create().ComputeHash($b))
+```
+
 ## Politique de sécurité (CSP)
 
 `index.html` déclare une Content-Security-Policy qui n'autorise que les ressources de son propre site, plus le script `https://docs.getgrist.com`. Toute nouvelle ressource externe (script, image, `fetch`…) sera **bloquée** tant qu'elle n'est pas ajoutée à la balise `<meta http-equiv="Content-Security-Policy">` — préférer l'ajouter dans ce dossier.

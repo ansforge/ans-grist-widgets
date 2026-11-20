@@ -14,10 +14,10 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://docs.getgrist.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Carte de France – Widget Grist</title>
-  <!-- Dépendances embarquées (voir assets/README.md) -->
-  <link rel="stylesheet" href="assets/leaflet.css"/>
-  <script src="assets/leaflet.js"></script>
-  <script src="assets/chroma.min.js"></script>
+  <!-- Dépendances embarquées (voir assets/README.md) : l'empreinte (integrity) bloque tout fichier modifié -->
+  <link rel="stylesheet" href="assets/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"/>
+  <script src="assets/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"></script>
+  <script src="assets/chroma.min.js" integrity="sha384-VRhlkYEqoAXsWzoORIQL0gHdX0BvQoQG89GxEj7I4xlffttgMvoMsQr7E/IWGK9T"></script>
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
     :root{color-scheme:light}
@@ -375,10 +375,33 @@ function col(raw){
 function isEmoCat(c){return !!c.emoji;}
 function activeColorCats(){return APP.cats.filter(c=>c.active&&!isEmoCat(c));}
 function activeEmoCats(){return APP.cats.filter(c=>c.active&&isEmoCat(c));}
-// Sécurité : toute donnée venant de Grist insérée dans du HTML doit passer par esc(),
-// et par jsArg() si elle est un argument de gestionnaire inline (onclick="f(…)")
-function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
-function jsArg(s){return esc(JSON.stringify(String(s??'')));}
+// ── Sécurité : construction du HTML ───────────────────────
+// Tout HTML est construit avec le gabarit html`…` : chaque ${valeur} y est échappée
+// automatiquement, sauf ce qui a déjà été produit par html`…` ou js().
+//   - tableau de html`…`  → concaténé (ne pas faire .join(), qui produirait du texte échappé)
+//   - null / undefined / false → rien
+//   - argument de gestionnaire inline (onclick="f(${…})") → toujours js(valeur)
+//   - insertion dans la page → setHtml(element, html`…`) ; jamais .innerHTML directement
+// Règles vérifiées automatiquement : node tools/check-html.mjs (voir tools/README.md).
+class SafeHtml{constructor(s){this.s=s;}toString(){return this.s;}}
+function escHtml(s){return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function htmlPart(v){
+  if(v instanceof SafeHtml)return v.s;
+  if(Array.isArray(v))return v.map(htmlPart).join('');
+  if(v===null||v===undefined||v===false)return '';
+  return escHtml(v);
+}
+function html(strings,...vals){
+  let out=strings[0];
+  for(let i=0;i<vals.length;i++)out+=htmlPart(vals[i])+strings[i+1];
+  return new SafeHtml(out);
+}
+// Valeur littérale JavaScript sûre dans un attribut onclick="…" (chaîne, nombre, booléen)
+function js(v){return new SafeHtml(escHtml(JSON.stringify(v??null)));}
+function setHtml(el,h){
+  if(!(h instanceof SafeHtml))throw new TypeError(`setHtml attend un gabarit html\`…\``);
+  el.innerHTML=h.s;
+}
 // Emojis à afficher pour un département (catégories emoji actives auxquelles il appartient)
 function deptEmojis(code){
   const d=APP.depts[code];if(!d||!d.visible)return [];
@@ -432,7 +455,7 @@ function loadConfig(opts){
 // ── Config modal ──────────────────────────────────────────
 let ALL_TABLES=[], TABLE_COLS={};
 function makeOpts(sel,list,current){
-  sel.innerHTML='<option value="">— choisir —</option>';
+  setHtml(sel,html`<option value="">— choisir —</option>`);
   for(const{id,label}of list){const o=document.createElement('option');o.value=id;o.textContent=label;if(id===current)o.selected=true;sel.appendChild(o);}
 }
 async function loadTableCols(tableId){
@@ -468,7 +491,7 @@ async function showConfig(){
   }catch(e){
     document.getElementById('cfg-loading').style.display='none';
     const msg=document.getElementById('cfg-msg');msg.className='err';msg.style.display='block';
-    msg.innerHTML='❌ Impossible de lire les tables : <b>'+esc(e.message)+'</b><br>👉 Paramètres du widget → <b>Accès complet au document</b>';
+    setHtml(msg,html`❌ Impossible de lire les tables : <b>${e.message}</b><br>👉 Paramètres du widget → <b>Accès complet au document</b>`);
   }
 }
 async function saveConfig(){
@@ -528,7 +551,8 @@ function labelPoint(geom){
 function labelHtml(code){
   const emos=deptEmojis(code);
   if(!APP.showCodes&&!emos.length)return ``;
-  return `<span>${APP.showCodes?`<span>${esc(code)}</span>`:``}${emos.length?`<span class="demo">${emos.map(esc).join(` `)}</span>`:``}</span>`;
+  // Emojis séparés par un espace : la jointure se fait sur le texte brut, échappé ensuite par html`…`
+  return String(html`<span>${APP.showCodes&&html`<span>${code}</span>`}${emos.length>0&&html`<span class="demo">${emos.join(` `)}</span>`}</span>`);
 }
 function makeLabelItem(latlng,code,mini){
   const marker=L.marker(latlng,{icon:L.divIcon({className:mini?`dlabel mini`:`dlabel`,html:``,iconSize:null}),interactive:false,keyboard:false});
@@ -536,9 +560,9 @@ function makeLabelItem(latlng,code,mini){
 }
 // Met à jour le contenu d'une étiquette ; renvoie true si elle a quelque chose à afficher
 function syncLabel(it){
-  const html=labelHtml(it.code);
-  if(html!==it.html){it.html=html;it.marker.setIcon(L.divIcon({className:it.mini?`dlabel mini`:`dlabel`,html,iconSize:null}));}
-  return html!==``;
+  const markup=labelHtml(it.code);
+  if(markup!==it.html){it.html=markup;it.marker.setIcon(L.divIcon({className:it.mini?`dlabel mini`:`dlabel`,html:markup,iconSize:null}));}
+  return markup!==``;
 }
 function buildLabels(){
   if(mainLabels){mainMap.removeLayer(mainLabels);}
@@ -594,7 +618,18 @@ async function toggleCodes(){
 }
 
 // ── GeoJSON ───────────────────────────────────────────────
-async function fetchJson(url){const r=await fetch(url);if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+// Empreintes des données embarquées : un fichier modifié est rejeté par le navigateur (voir assets/README.md)
+const ASSET_SRI={
+  [`assets/departements.geojson`]:`sha384-wzDd9aaofk6VT76R0uTrjWNBPTosneRhdRrUGEhEojhwcPsZt4qlh5MFZ3F8vhXB`,
+  [`assets/regions.geojson`]:`sha384-afA6lOnPQTIhLnUH8EuXdhZqB6nMIz3io4n0ikDeP8jHq46Uv5ZWgxjByDAL2VwH`,
+};
+async function fetchJson(url){
+  const integrity=ASSET_SRI[url];
+  if(!integrity)throw new Error(`Ressource sans empreinte refusée : ${url}`);
+  const r=await fetch(url,{integrity});
+  if(!r.ok)throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
 
 async function loadGeoJSON(){
   // 1. Charger métropole (contours simplifiés france-geojson, copie locale dans assets/)
@@ -648,13 +683,14 @@ function getStyle(f){
 function makeOnEach(){
   return function(feat,layer){
     const code=String(feat.properties?.code||''),nom=feat.properties?.nom||APP.depts[code]?.nom||code;
-    layer.bindTooltip(`<b>${esc(nom)}</b> (${esc(code)})`,{sticky:true,opacity:0.9});
+    layer.bindTooltip(String(html`<b>${nom}</b> (${code})`),{sticky:true,opacity:0.9});
     layer.on({
       mouseover(e){
         e.target.setStyle({weight:2,color:'#111'});e.target.bringToFront();
-        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>(c.emoji?esc(c.emoji)+' ':'')+esc(c.nom)).join(', '):'';
+        // Liste en texte brut (échappée ensuite par html`…`)
+        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>(c.emoji?c.emoji+' ':'')+c.nom).join(', '):'';
         const tip=document.getElementById('tip');
-        tip.innerHTML=`<b>${esc(nom)}</b> (${esc(code)})`+(cats?`<br><span style="font-size:10px;color:#666">${cats}</span>`:'');
+        setHtml(tip,html`<b>${nom}</b> (${code})${cats&&html`<br><span style="font-size:10px;color:#666">${cats}</span>`}`);
         tip.classList.add('show');
       },
       mouseout(e){
@@ -702,30 +738,29 @@ function refresh(){
 
 // ── Légende ───────────────────────────────────────────────
 function renderLegend(){
-  const el=document.getElementById('li');el.innerHTML='';
+  const el=document.getElementById('li');
   // Nombre de départements affectés à une catégorie
   const depts=Object.values(APP.depts);
   const count=c=>depts.filter(d=>d.catIds.includes(c._id)).length;
-  const cnt=n=>`<span class="lc">${n}</span>`;
+  const cnt=n=>html`<span class="lc">${n}</span>`;
   // Les catégories emoji sont indépendantes du mode de coloration : toujours listées
-  const emoLegend=activeEmoCats().map(c=>`<div class="lr"><div class="ld emo">${esc(c.emoji)}</div>${cnt(count(c))}${esc(c.nom)}</div>`).join('');
-  if(APP.mode==='unique'){el.innerHTML=`<div class="lr"><div class="ld" style="background:${APP.uniqueColor}"></div>Tous visibles</div>`+emoLegend;return;}
-  if(APP.mode==='choropleth'){el.innerHTML=`<div style="height:10px;width:110px;border-radius:3px;background:linear-gradient(to right,${APP.choroLow},${APP.choroHigh});margin-bottom:3px"></div><div style="display:flex;justify-content:space-between;font-size:9px;color:#888"><span>min</span><span>max</span></div>`+emoLegend;return;}
+  const emoLegend=activeEmoCats().map(c=>html`<div class="lr"><div class="ld emo">${c.emoji}</div>${cnt(count(c))}${c.nom}</div>`);
+  if(APP.mode==='unique'){setHtml(el,html`<div class="lr"><div class="ld" style="background:${APP.uniqueColor}"></div>Tous visibles</div>${emoLegend}`);return;}
+  if(APP.mode==='choropleth'){setHtml(el,html`<div style="height:10px;width:110px;border-radius:3px;background:linear-gradient(to right,${APP.choroLow},${APP.choroHigh});margin-bottom:3px"></div><div style="display:flex;justify-content:space-between;font-size:9px;color:#888"><span>min</span><span>max</span></div>${emoLegend}`);return;}
   const active=activeColorCats();
-  if(!active.length&&!emoLegend){el.innerHTML='<span style="color:#aaa;font-size:10px">Aucune catégorie active</span>';return;}
-  let html='';
-  for(const c of active){const co=col(c.couleur)||NAMED.bleu;html+=`<div class="lr"><div class="ld" style="background:${co}"></div>${cnt(count(c))}${esc(c.nom)}</div>`;}
+  if(!active.length&&!emoLegend.length){setHtml(el,html`<span style="color:#aaa;font-size:10px">Aucune catégorie active</span>`);return;}
+  const rows=active.map(c=>html`<div class="lr"><div class="ld" style="background:${col(c.couleur)||NAMED.bleu}"></div>${cnt(count(c))}${c.nom}</div>`);
   if(active.length>1&&APP.useCumul){
     // Cumul : départements présents dans au moins deux catégories couleur actives
     const nCumul=depts.filter(d=>active.filter(c=>d.catIds.includes(c._id)).length>1).length;
-    html+=`<div class="lr"><div class="ld" style="background:${APP.cumulColor};border-style:dashed"></div>${cnt(nCumul)}<i>Cumul</i></div>`;
+    rows.push(html`<div class="lr"><div class="ld" style="background:${APP.cumulColor};border-style:dashed"></div>${cnt(nCumul)}<i>Cumul</i></div>`);
   }
-  el.innerHTML=html+emoLegend;
+  setHtml(el,html`${rows}${emoLegend}`);
 }
 
 // ── Catégories : rendu + édition ──────────────────────────
 function colorChips(selectedHex){
-  return NAMED_COLORS.map(({k,v})=>`<div class="col-chip${selectedHex===v?' sel':''}" style="background:${v}" title="${k}" onclick="pickColor('${v}','${k}')"></div>`).join('');
+  return NAMED_COLORS.map(({k,v})=>html`<div class="col-chip${selectedHex===v&&' sel'}" style="background:${v}" title="${k}" onclick="pickColor(${js(v)},${js(k)})"></div>`);
 }
 function pickColor(hex,name){
   document.querySelectorAll('.col-chip').forEach(c=>c.classList.toggle('sel',c.style.background===hex||c.style.backgroundColor===hex));
@@ -735,8 +770,8 @@ function pickColor(hex,name){
 function renderCats(){
   const el=document.getElementById('cl');
   document.getElementById('cbadge').textContent=APP.cats.length?`(${APP.cats.length})`:'';
-  if(!APP.cats.length){el.innerHTML='<div class="nc">Aucune catégorie dans Grist.</div>';return;}
-  el.innerHTML='';
+  if(!APP.cats.length){setHtml(el,html`<div class="nc">Aucune catégorie dans Grist.</div>`);return;}
+  el.replaceChildren();
   for(const cat of APP.cats){
     const co=col(cat.couleur);
     const coD=co||'#bbb';
@@ -744,32 +779,32 @@ function renderCats(){
       // Mode édition inline
       const div=document.createElement('div');
       div.className='cat-edit-row';
-      div.innerHTML=`
-        <input type="text" id="edit-cat-name" value="${esc(cat.nom)}" placeholder="Nom de la catégorie">
+      setHtml(div,html`
+        <input type="text" id="edit-cat-name" value="${cat.nom}" placeholder="Nom de la catégorie">
         <div class="col-row">${colorChips(co||'')}</div>
         <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
-          HEX : <input type="text" class="col-hex" id="edit-hex" value="${esc(co||cat.couleur||'')}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
+          HEX : <input type="text" class="col-hex" id="edit-hex" value="${co||cat.couleur||''}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
         </div>
         <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
-          Emoji : <input type="text" class="col-hex" id="edit-emoji" style="width:52px;font-size:13px;font-family:inherit" value="${esc(cat.emoji||'')}" placeholder="🐄">
+          Emoji : <input type="text" class="col-hex" id="edit-emoji" style="width:52px;font-size:13px;font-family:inherit" value="${cat.emoji||''}" placeholder="🐄">
           <span>si renseigné, remplace la couleur</span>
         </div>
         <div class="cat-edit-btns">
           <button class="btn-sm" onclick="cancelEdit()">Annuler</button>
-          <button class="btn-sm ok" onclick="saveCatEdit(${cat._id})">✓ Enregistrer</button>
-        </div>`;
+          <button class="btn-sm ok" onclick="saveCatEdit(${js(cat._id)})">✓ Enregistrer</button>
+        </div>`);
       el.appendChild(div);
     }else{
       const row=document.createElement('div');
       row.className='cr'+(cat.active?' on':'');
-      row.innerHTML=`
-        <input type="checkbox" class="cchk" ${cat.active?'checked':''} onchange="toggleCat(${cat._id},this.checked)">
+      setHtml(row,html`
+        <input type="checkbox" class="cchk" ${cat.active&&'checked'} onchange="toggleCat(${js(cat._id)},this.checked)">
         ${isEmoCat(cat)
-          ?`<div class="csw emo" title="Catégorie emoji">${esc(cat.emoji)}</div>`
-          :`<div class="csw" style="background:${coD}" title="${esc(cat.couleur||'')}${!co?' (couleur non reconnue)':''}"></div>`}
-        <span class="cn" title="${esc(cat.nom)}">${esc(cat.nom)}</span>
-        ${!co&&!isEmoCat(cat)?`<span style="font-size:9px;color:#e74c3c" title="Couleur non reconnue: ${esc(cat.couleur)}. Cliquez ✏️ pour corriger.">⚠️</span>`:''}
-        <button class="cedit" onclick="startEditCat(${cat._id})" title="Éditer nom/couleur/emoji">✏️</button>`;
+          ?html`<div class="csw emo" title="Catégorie emoji">${cat.emoji}</div>`
+          :html`<div class="csw" style="background:${coD}" title="${cat.couleur||''}${!co&&' (couleur non reconnue)'}"></div>`}
+        <span class="cn" title="${cat.nom}">${cat.nom}</span>
+        ${!co&&!isEmoCat(cat)&&html`<span style="font-size:9px;color:#e74c3c" title="Couleur non reconnue: ${cat.couleur}. Cliquez ✏️ pour corriger.">⚠️</span>`}
+        <button class="cedit" onclick="startEditCat(${js(cat._id)})" title="Éditer nom/couleur/emoji">✏️</button>`);
       el.appendChild(row);
     }
   }
@@ -825,7 +860,7 @@ function buildRegionFilter(){
   }
   const sel=document.getElementById('reg-filter');
   const current=sel.value;
-  sel.innerHTML='<option value="">— Toutes les régions —</option>';
+  setHtml(sel,html`<option value="">— Toutes les régions —</option>`);
   [...regions.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([nom])=>{
     const o=document.createElement('option');o.value=nom;o.textContent=nom;if(nom===current)o.selected=true;sel.appendChild(o);
   });
@@ -921,17 +956,17 @@ function renderDepts(){
   const list=getFilteredList();
   document.getElementById('dbadge').textContent=`(${list.length}/${Object.keys(APP.depts).length})`;
   const activeCats=APP.cats.filter(c=>c.active);
-  wrap.innerHTML='';
+  wrap.replaceChildren();
   for(const d of list){
     const row=document.createElement('div');
     row.className='dr'+(d.visible?'':' gray');
     const dots=activeCats.map(cat=>{
       const on=d.catIds.includes(cat._id);
-      if(isEmoCat(cat))return `<div class="cdot emo${on?' on':''}" title="${esc(cat.nom)}" onclick="toggleDeptCat(${jsArg(d.code)},${cat._id})">${esc(cat.emoji)}</div>`;
+      if(isEmoCat(cat))return html`<div class="cdot emo${on&&' on'}" title="${cat.nom}" onclick="toggleDeptCat(${js(d.code)},${js(cat._id)})">${cat.emoji}</div>`;
       const co=col(cat.couleur)||NAMED.bleu;
-      return `<div class="cdot" title="${esc(cat.nom)}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat(${jsArg(d.code)},${cat._id})"></div>`;
-    }).join('');
-    row.innerHTML=`<input type="checkbox" class="dvis" ${d.visible?'checked':''} title="Visible/grisé" onchange="toggleVis(${jsArg(d.code)},this.checked)"><span class="dc">${esc(d.code)}</span><span class="dn">${esc(d.nom)}</span><div class="dcs">${dots||'<span style="font-size:10px;color:#bbb">—</span>'}</div>`;
+      return html`<div class="cdot" title="${cat.nom}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat(${js(d.code)},${js(cat._id)})"></div>`;
+    });
+    setHtml(row,html`<input type="checkbox" class="dvis" ${d.visible&&'checked'} title="Visible/grisé" onchange="toggleVis(${js(d.code)},this.checked)"><span class="dc">${d.code}</span><span class="dn">${d.nom}</span><div class="dcs">${dots.length?dots:html`<span style="font-size:10px;color:#bbb">—</span>`}</div>`);
     wrap.appendChild(row);
   }
 }
