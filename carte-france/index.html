@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Carte de France – Widget Grist</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
+  <!-- Dépendances embarquées (voir assets/README.md) -->
+  <link rel="stylesheet" href="assets/leaflet.css"/>
+  <script src="assets/leaflet.js"></script>
+  <script src="assets/chroma.min.js"></script>
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
     :root{color-scheme:light}
@@ -319,7 +320,7 @@
       <div class="guide-section">
         <h3>🔌 Ajouter le widget</h3>
         <ul>
-          <li><b>Widget personnalisé</b> → URL : <code>https://bigorneau15652.github.io/map/carte-france/</code></li>
+          <li><b>Widget personnalisé</b> → URL : <code>https://ansforge.github.io/ans-grist-widgets/carte-france/</code></li>
           <li>Accès : <b>Accès complet au document</b> (obligatoire)</li>
         </ul>
       </div>
@@ -583,10 +584,9 @@ async function toggleCodes(){
 async function fetchJson(url){const r=await fetch(url);if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
 
 async function loadGeoJSON(){
-  // 1. Charger métropole (contours simplifiés france-geojson)
-  // Remarque : geo.api.gouv.fr ne fournit pas de contours pour les départements (seulement pour les communes)
+  // 1. Charger métropole (contours simplifiés france-geojson, copie locale dans assets/)
   let metroFeats=[];
-  try{const g=await fetchJson(`https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements-version-simplifiee.geojson`);metroFeats=g.features||[];}catch(_){}
+  try{const g=await fetchJson(`assets/departements.geojson`);metroFeats=g.features||[];}catch(e){console.warn(`Contours des départements :`,e.message);}
 
   // Exclure les DOM-TOM de la liste métro (utiliser les données embarquées)
   const dtSet=new Set(Object.keys(DT));
@@ -819,7 +819,7 @@ function buildRegionFilter(){
 }
 
 // Contour en gras de la région sélectionnée dans le filtre
-const REGIONS_URL=`https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/regions-version-simplifiee.geojson`;
+const REGIONS_URL=`assets/regions.geojson`;
 const REGION_STYLE={pane:`regionPane`,interactive:false,style:{color:`#111`,weight:3.5,opacity:1,fill:false}};
 let regionFeats=null;      // contours des régions métropolitaines (chargés au premier usage)
 let regionLayers=[];       // [{map,layer}] actuellement dessinés
