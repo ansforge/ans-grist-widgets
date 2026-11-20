@@ -236,7 +236,7 @@
         <div class="sh" onclick="tog(this)">📍 Départements <span id="dbadge" style="font-weight:400;font-size:10px;color:#888;margin-left:4px"></span><span class="arr">▾</span></div>
         <div class="sb">
           <input type="text" id="dsearch" placeholder="Rechercher (nom ou code)…" oninput="renderDepts()">
-          <select id="reg-filter" onchange="renderDepts()">
+          <select id="reg-filter" onchange="renderDepts();highlightRegion()">
             <option value="">— Toutes les régions —</option>
           </select>
           <div class="fbs">
@@ -334,7 +334,7 @@
           <li>Cochez ✓ une catégorie → active sur la carte. Cliquez ✏️ pour éditer son nom/couleur/emoji</li>
           <li>Cliquez la <b>pastille colorée</b> d'un département → ajoute/retire de la catégorie</li>
           <li>Décochez ☑ à gauche → le département devient grisé sur la carte</li>
-          <li>Filtrez par région → sélectionnez tout en un clic</li>
+          <li>Filtrez par région → son contour est surligné en gras sur la carte ; sélectionnez tout en un clic</li>
           <li>Bouton <b>N°</b> (en haut) → affiche/masque le numéro des départements sur la carte. Les plus petits n'apparaissent qu'en zoomant</li>
         </ul>
       </div>
@@ -481,6 +481,10 @@ function initMaps(){
   mainMap=L.map('map',{zoomControl:true,attributionControl:false}).setView([46.5,2.5],6);
   for(const[code,cfg]of Object.entries(DT))
     mMaps[code]=L.map(cfg.el,MAP_OPT);
+  // Calque dédié au contour de région : au-dessus des départements, sous les numéros, sans capter la souris
+  for(const m of [mainMap,...Object.values(mMaps)]){
+    const p=m.createPane(`regionPane`);p.style.zIndex=450;p.style.pointerEvents=`none`;
+  }
   mainMap.on(`zoomend`,updateLabelVisibility);
 }
 
@@ -813,6 +817,43 @@ function buildRegionFilter(){
   });
 }
 
+// Contour en gras de la région sélectionnée dans le filtre
+const REGIONS_URL=`https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/regions-version-simplifiee.geojson`;
+const REGION_STYLE={pane:`regionPane`,interactive:false,style:{color:`#111`,weight:3.5,opacity:1,fill:false}};
+let regionFeats=null;      // contours des régions métropolitaines (chargés au premier usage)
+let regionLayers=[];       // [{map,layer}] actuellement dessinés
+let drawnRegion=``;        // région actuellement dessinée
+const normTxt=s=>String(s||``).trim().toLowerCase().normalize(`NFD`).replace(/[̀-ͯ]/g,``);
+async function loadRegionFeats(){
+  if(!regionFeats){try{regionFeats=(await fetchJson(REGIONS_URL)).features||[];}catch(e){console.warn(`Contours des régions :`,e.message);regionFeats=[];}}
+  return regionFeats;
+}
+function clearRegionOutline(){
+  for(const{map,layer}of regionLayers)map.removeLayer(layer);
+  regionLayers=[];
+}
+async function highlightRegion(){
+  const name=document.getElementById(`reg-filter`).value;
+  if(name===drawnRegion)return;
+  drawnRegion=name;
+  clearRegionOutline();
+  if(!name)return;
+  const depts=Object.values(APP.depts).filter(d=>d.nom_region===name);
+  // Outre-mer : la région = le département, on entoure son encart
+  for(const d of depts){
+    if(!mLayers[d.code])continue;
+    const layer=L.geoJSON(mLayers[d.code].toGeoJSON(),REGION_STYLE).addTo(mMaps[d.code]);
+    regionLayers.push({map:mMaps[d.code],layer});
+  }
+  // Métropole : contour officiel de la région, trouvé par son code puis par son nom
+  const rawCode=depts.find(d=>d.code_region)?.code_region;
+  const code=rawCode?String(rawCode).padStart(2,`0`):``;
+  const feats=await loadRegionFeats();
+  if(drawnRegion!==name)return;   // la sélection a changé pendant le chargement
+  const f=feats.find(x=>code&&String(x.properties?.code)===code)||feats.find(x=>normTxt(x.properties?.nom)===normTxt(name));
+  if(f)regionLayers.push({map:mainMap,layer:L.geoJSON(f,REGION_STYLE).addTo(mainMap)});
+}
+
 // ── Liste départements ────────────────────────────────────
 function sk(c){
   if(c===`2A`)return 20.1;if(c===`2B`)return 20.2;
@@ -982,6 +1023,7 @@ async function fetchAllTables(){
   else banner.classList.remove('show');
 
   buildRegionFilter();
+  highlightRegion();
   renderCats();
   renderDepts();
   // Redessine les contours si la table passe de 64 à 64A/64B (ou inversement), idem pour 76
