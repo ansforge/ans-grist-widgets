@@ -35,8 +35,10 @@
 
     /* Numéros de département */
     .dlabel{background:none;border:none}
-    .dlabel span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;font-weight:700;color:#1a1a1a;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff;pointer-events:none}
-    .dlabel.mini span{font-size:10px}
+    .dlabel>span{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;line-height:1.15;white-space:nowrap;font-size:11px;font-weight:700;color:#1a1a1a;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff;pointer-events:none}
+    .dlabel.mini>span{font-size:10px}
+    .dlabel .demo{font-size:12px;font-weight:400;text-shadow:none}
+    .dlabel.mini .demo{font-size:10px}
 
     /* DOM-TOM insets */
     #dtp{position:absolute;bottom:8px;right:8px;display:grid;grid-template-columns:1fr 1fr;gap:3px;z-index:1000;width:175px}
@@ -133,6 +135,10 @@
     .dcs{display:flex;gap:3px;flex-shrink:0}
     .cdot{width:14px;height:14px;border-radius:3px;cursor:pointer;border:1.5px solid rgba(0,0,0,0.2);flex-shrink:0;transition:transform .1s}
     .cdot:hover{transform:scale(1.3)}
+    .cdot.emo{background:none!important;border:none;font-size:12px;line-height:14px;text-align:center;filter:grayscale(1);opacity:.35}
+    .cdot.emo.on{filter:none;opacity:1}
+    .csw.emo{border:none;font-size:15px;line-height:18px;text-align:center;cursor:default}
+    .ld.emo{border:none;width:auto;min-width:12px;height:auto;font-size:12px;line-height:1}
 
     /* Modal */
     .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:5000;display:flex;align-items:center;justify-content:center}
@@ -266,7 +272,7 @@
         </div>
         <div class="cfg-group">
           <label>Table des Catégories</label>
-          <small>Colonnes : nom, couleur, active (ou selection)</small>
+          <small>Colonnes : nom, couleur, active (ou selection), et optionnel : emoji</small>
           <select id="cfg-cats"></select>
         </div>
         <div class="cfg-group">
@@ -304,7 +310,7 @@
         <table>
           <tr><th>Table</th><th>Colonnes clés</th></tr>
           <tr><td><code>Departements</code></td><td><code>code_dept</code>, <code>nom_dept</code>, <code>visible</code> (Bascule), <code>nom_region</code></td></tr>
-          <tr><td><code>Categories</code></td><td><code>nom</code>, <code>couleur</code>, <code>active</code> (Bascule)</td></tr>
+          <tr><td><code>Categories</code></td><td><code>nom</code>, <code>couleur</code>, <code>active</code> (Bascule), <code>emoji</code> (optionnel)</td></tr>
           <tr><td><code>Departement_categories</code></td><td><code>dept</code> (Réf→Depts), <code>categorie</code> (Réf→Cats)</td></tr>
         </table>
         <p style="margin-top:5px"><b>64 et 76 découpés</b> : remplacez la ligne <code>64</code> par <code>64A</code> (Pays basque, arr. de Bayonne) et <code>64B</code> (Béarn, arr. de Pau et d'Oloron), et la ligne <code>76</code> par <code>76A</code> (arr. de Rouen et de Dieppe) et <code>76B</code> (arr. du Havre). La carte s'adapte automatiquement.</p>
@@ -319,12 +325,13 @@
       </div>
       <div class="guide-section">
         <h3>🎨 Couleurs (colonne <code>couleur</code>)</h3>
+        <p><b>Catégorie emoji</b> : renseignez la colonne <code>emoji</code> (ex : 🐄). La catégorie ne colore plus le fond : son emoji s'affiche sous le numéro du département, si le zoom le permet. Un département peut ainsi cumuler une couleur et plusieurs emojis.</p>
         <p><span style="color:#e74c3c">● rouge</span> <span style="color:#2980b9">● bleu</span> <span style="color:#27ae60">● vert</span> <span style="color:#e67e22">● orange</span> <span style="color:#8e44ad">● violet</span> <span style="color:#f1c40f">● jaune</span> <span style="color:#e91e8c">● rose</span> <span style="color:#795548">● marron</span> <span style="color:#00bcd4">● cyan</span> <span style="color:#2c3e50">● noir</span><br>— ou HEX : <code>#3498db</code></p>
       </div>
       <div class="guide-section">
         <h3>🖱️ Utilisation</h3>
         <ul>
-          <li>Cochez ✓ une catégorie → active sur la carte. Cliquez ✏️ pour éditer son nom/couleur</li>
+          <li>Cochez ✓ une catégorie → active sur la carte. Cliquez ✏️ pour éditer son nom/couleur/emoji</li>
           <li>Cliquez la <b>pastille colorée</b> d'un département → ajoute/retire de la catégorie</li>
           <li>Décochez ☑ à gauche → le département devient grisé sur la carte</li>
           <li>Filtrez par région → sélectionnez tout en un clic</li>
@@ -348,6 +355,19 @@ function col(raw){
   if(!raw)return null;
   const k=String(raw).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   return NAMED[COL_ALIASES[k]||k]||(/^#[0-9a-f]{3,8}$/i.test(raw)?raw:null);
+}
+
+// ── Catégories emoji ──────────────────────────────────────
+// Une catégorie dont la colonne `emoji` est renseignée ne colore pas le fond :
+// elle est représentée par son emoji sous le numéro du département.
+function isEmoCat(c){return !!c.emoji;}
+function activeColorCats(){return APP.cats.filter(c=>c.active&&!isEmoCat(c));}
+function activeEmoCats(){return APP.cats.filter(c=>c.active&&isEmoCat(c));}
+function esc(s){return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+// Emojis à afficher pour un département (catégories emoji actives auxquelles il appartient)
+function deptEmojis(code){
+  const d=APP.depts[code];if(!d||!d.visible)return [];
+  return activeEmoCats().filter(c=>d.catIds.includes(c._id)).map(c=>c.emoji);
 }
 
 // ── DOM-TOM ───────────────────────────────────────────────
@@ -448,7 +468,7 @@ function showGuide(){document.getElementById('guide-modal').classList.remove('go
 function closeModal(id){document.getElementById(id).classList.add('gone');}
 
 // ── État ──────────────────────────────────────────────────
-const APP={mode:'categorie',uniqueColor:'#e74c3c',cumulColor:'#f39c12',useCumul:true,choroLow:'#ffffb2',choroHigh:'#d7191c',showCodes:false,cats:[],depts:{},dcRows:{},deptRowId:{}};
+const APP={mode:'categorie',uniqueColor:'#e74c3c',cumulColor:'#f39c12',useCumul:true,choroLow:'#ffffb2',choroHigh:'#d7191c',showCodes:false,colEmoji:null,cats:[],depts:{},dcRows:{},deptRowId:{}};
 let deptFilter='all';
 let editingCatId=null; // catégorie en cours d'édition
 
@@ -464,11 +484,12 @@ function initMaps(){
   mainMap.on(`zoomend`,updateLabelVisibility);
 }
 
-// ── Numéros de département ────────────────────────────────
-let mainLabels=null;          // groupe de numéros sur la carte principale
-let mainLabelItems=[];        // [{marker,bounds}] pour masquer les trop petits
-const miniLabels={};          // groupes de numéros des encarts DOM-TOM
-const LABEL_MIN_PX=22;        // taille minimale (pixels) d'un département pour afficher son numéro
+// ── Étiquettes de département (numéro + emojis) ───────────
+let mainLabels=null;          // groupe d'étiquettes sur la carte principale
+let mainLabelItems=[];        // [{code,marker,bounds,html}] pour masquer les trop petits
+const miniLabels={};          // groupes d'étiquettes des encarts DOM-TOM
+const miniLabelItems={};      // code → [{code,marker,html}]
+const LABEL_MIN_PX=22;        // taille minimale (pixels) d'un département pour afficher son étiquette
 
 // Point d'ancrage : centre de gravité du plus grand morceau du département
 function labelPoint(geom){
@@ -484,48 +505,64 @@ function labelPoint(geom){
   }
   return best;
 }
-function makeLabel(latlng,code,mini){
-  return L.marker(latlng,{icon:L.divIcon({className:mini?`dlabel mini`:`dlabel`,html:`<span>${code}</span>`,iconSize:null}),interactive:false,keyboard:false});
+// Contenu de l'étiquette : numéro (si activé) puis, sur une ligne en dessous, les emojis
+function labelHtml(code){
+  const emos=deptEmojis(code);
+  if(!APP.showCodes&&!emos.length)return ``;
+  return `<span>${APP.showCodes?`<span>${esc(code)}</span>`:``}${emos.length?`<span class="demo">${emos.map(esc).join(` `)}</span>`:``}</span>`;
+}
+function makeLabelItem(latlng,code,mini){
+  const marker=L.marker(latlng,{icon:L.divIcon({className:mini?`dlabel mini`:`dlabel`,html:``,iconSize:null}),interactive:false,keyboard:false});
+  return{code,marker,html:``,mini};
+}
+// Met à jour le contenu d'une étiquette ; renvoie true si elle a quelque chose à afficher
+function syncLabel(it){
+  const html=labelHtml(it.code);
+  if(html!==it.html){it.html=html;it.marker.setIcon(L.divIcon({className:it.mini?`dlabel mini`:`dlabel`,html,iconSize:null}));}
+  return html!==``;
 }
 function buildLabels(){
   if(mainLabels){mainMap.removeLayer(mainLabels);}
-  mainLabels=L.layerGroup();mainLabelItems=[];
+  mainLabels=L.layerGroup().addTo(mainMap);mainLabelItems=[];
   if(geoLayer)geoLayer.eachLayer(l=>{
     const code=String(l.feature?.properties?.code||``);if(!code)return;
     const pt=labelPoint(l.feature.geometry)||l.getBounds().getCenter();
-    mainLabelItems.push({marker:makeLabel(pt,code,false),bounds:l.getBounds()});
+    mainLabelItems.push({...makeLabelItem(pt,code,false),bounds:l.getBounds()});
   });
   for(const[code,m]of Object.entries(mMaps)){
     if(miniLabels[code]){m.removeLayer(miniLabels[code]);delete miniLabels[code];}
+    miniLabelItems[code]=[];
     const layer=mLayers[code];if(!layer)continue;
-    const g=L.layerGroup();
-    layer.eachLayer(l=>{const pt=labelPoint(l.feature.geometry)||l.getBounds().getCenter();g.addLayer(makeLabel(pt,code,true));});
+    const g=L.layerGroup().addTo(m);
+    layer.eachLayer(l=>{const pt=labelPoint(l.feature.geometry)||l.getBounds().getCenter();miniLabelItems[code].push(makeLabelItem(pt,code,true));});
     miniLabels[code]=g;
   }
-  applyCodesVisibility();
+  updateLabels();
 }
-// Masque les numéros des départements trop petits au niveau de zoom actuel
+// Affiche les étiquettes qui ont un contenu, en masquant celles des départements trop petits au zoom actuel
 function updateLabelVisibility(){
   if(!mainLabels)return;
   for(const it of mainLabelItems){
     const a=mainMap.latLngToLayerPoint(it.bounds.getNorthWest()),b=mainMap.latLngToLayerPoint(it.bounds.getSouthEast());
     const big=Math.abs(b.x-a.x)>=LABEL_MIN_PX&&Math.abs(b.y-a.y)>=LABEL_MIN_PX;
-    if(big&&!mainLabels.hasLayer(it.marker))mainLabels.addLayer(it.marker);
-    if(!big&&mainLabels.hasLayer(it.marker))mainLabels.removeLayer(it.marker);
+    const show=big&&it.html!==``;
+    if(show&&!mainLabels.hasLayer(it.marker))mainLabels.addLayer(it.marker);
+    if(!show&&mainLabels.hasLayer(it.marker))mainLabels.removeLayer(it.marker);
   }
 }
-function applyCodesVisibility(){
-  const on=APP.showCodes;
-  if(mainLabels){
-    if(on){updateLabelVisibility();if(!mainMap.hasLayer(mainLabels))mainLabels.addTo(mainMap);}
-    else if(mainMap.hasLayer(mainLabels))mainMap.removeLayer(mainLabels);
-  }
-  for(const[code,g]of Object.entries(miniLabels)){
-    const m=mMaps[code];
-    if(on&&!m.hasLayer(g))g.addTo(m);
-    if(!on&&m.hasLayer(g))m.removeLayer(g);
+function updateLabels(){
+  for(const it of mainLabelItems)syncLabel(it);
+  updateLabelVisibility();
+  for(const[code,items]of Object.entries(miniLabelItems)){
+    const g=miniLabels[code];if(!g)continue;
+    for(const it of items){
+      const show=syncLabel(it);
+      if(show&&!g.hasLayer(it.marker))g.addLayer(it.marker);
+      if(!show&&g.hasLayer(it.marker))g.removeLayer(it.marker);
+    }
   }
 }
+function applyCodesVisibility(){updateLabels();}
 function setCodesVisible(on){
   APP.showCodes=!!on;
   const btn=document.getElementById(`btn-codes`);if(btn)btn.classList.toggle(`on`,APP.showCodes);
@@ -573,7 +610,7 @@ function deptColor(code){
     if(mn===mx)return APP.choroHigh;
     return chroma.scale([APP.choroLow,APP.choroHigh]).mode('lab')((d.valeur-mn)/(mx-mn)).hex();
   }
-  const active=APP.cats.filter(c=>c.active);
+  const active=activeColorCats();
   const matched=active.filter(c=>d.catIds.includes(c._id));
   if(!matched.length)return null;
   if(matched.length===1)return col(matched[0].couleur)||NAMED.bleu;
@@ -597,7 +634,7 @@ function makeOnEach(){
     layer.on({
       mouseover(e){
         e.target.setStyle({weight:2,color:'#111'});e.target.bringToFront();
-        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>c.nom).join(', '):'';
+        const d=APP.depts[code];const cats=d?APP.cats.filter(c=>d.catIds.includes(c._id)&&c.active).map(c=>(c.emoji?c.emoji+' ':'')+esc(c.nom)).join(', '):'';
         const tip=document.getElementById('tip');
         tip.innerHTML=`<b>${nom}</b> (${code})`+(cats?`<br><span style="font-size:10px;color:#666">${cats}</span>`:'');
         tip.classList.add('show');
@@ -641,20 +678,13 @@ function renderMap(geojson){
 function refresh(){
   if(geoLayer)geoLayer.eachLayer(l=>l.setStyle(getStyle(l.feature)));
   for(const layer of Object.values(mLayers))layer.eachLayer(l=>l.setStyle(getStyle(l.feature)));
+  updateLabels();
   renderLegend();
 }
 
 // ── Légende ───────────────────────────────────────────────
 function renderLegend(){
   const el=document.getElementById('li');el.innerHTML='';
-<<<<<<< Updated upstream
-  if(APP.mode==='unique'){el.innerHTML=`<div class="lr"><div class="ld" style="background:${APP.uniqueColor}"></div>Tous visibles</div>`;return;}
-  if(APP.mode==='choropleth'){el.innerHTML=`<div style="height:10px;width:110px;border-radius:3px;background:linear-gradient(to right,${APP.choroLow},${APP.choroHigh});margin-bottom:3px"></div><div style="display:flex;justify-content:space-between;font-size:9px;color:#888"><span>min</span><span>max</span></div>`;return;}
-  const active=APP.cats.filter(c=>c.active);
-  if(!active.length){el.innerHTML='<span style="color:#aaa;font-size:10px">Aucune catégorie active</span>';return;}
-  for(const c of active){const co=col(c.couleur)||NAMED.bleu;el.innerHTML+=`<div class="lr"><div class="ld" style="background:${co}"></div>${c.nom}</div>`;}
-  if(active.length>1&&APP.useCumul)el.innerHTML+=`<div class="lr"><div class="ld" style="background:${APP.cumulColor};border-style:dashed"></div><i>Cumul</i></div>`;
-=======
   // Nombre de départements affectés à une catégorie
   const depts=Object.values(APP.depts);
   const count=c=>depts.filter(d=>d.catIds.includes(c._id)).length;
@@ -673,7 +703,6 @@ function renderLegend(){
     html+=`<div class="lr"><div class="ld" style="background:${APP.cumulColor};border-style:dashed"></div>${cnt(nCumul)}<i>Cumul</i></div>`;
   }
   el.innerHTML=html+emoLegend;
->>>>>>> Stashed changes
 }
 
 // ── Catégories : rendu + édition ──────────────────────────
@@ -703,6 +732,10 @@ function renderCats(){
         <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
           HEX : <input type="text" class="col-hex" id="edit-hex" value="${co||cat.couleur||''}" placeholder="#3498db" oninput="document.querySelectorAll('.col-chip').forEach(c=>c.classList.remove('sel'))">
         </div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#666">
+          Emoji : <input type="text" class="col-hex" id="edit-emoji" style="width:52px;font-size:13px;font-family:inherit" value="${esc(cat.emoji||'')}" placeholder="🐄">
+          <span>si renseigné, remplace la couleur</span>
+        </div>
         <div class="cat-edit-btns">
           <button class="btn-sm" onclick="cancelEdit()">Annuler</button>
           <button class="btn-sm ok" onclick="saveCatEdit(${cat._id})">✓ Enregistrer</button>
@@ -713,10 +746,12 @@ function renderCats(){
       row.className='cr'+(cat.active?' on':'');
       row.innerHTML=`
         <input type="checkbox" class="cchk" ${cat.active?'checked':''} onchange="toggleCat(${cat._id},this.checked)">
-        <div class="csw" style="background:${coD}" title="${cat.couleur||''}${!co?' (couleur non reconnue)':''}"></div>
-        <span class="cn" title="${cat.nom}">${cat.nom}</span>
-        ${!co?`<span style="font-size:9px;color:#e74c3c" title="Couleur non reconnue: ${cat.couleur}. Cliquez ✏️ pour corriger.">⚠️</span>`:''}
-        <button class="cedit" onclick="startEditCat(${cat._id})" title="Éditer nom/couleur">✏️</button>`;
+        ${isEmoCat(cat)
+          ?`<div class="csw emo" title="Catégorie emoji">${esc(cat.emoji)}</div>`
+          :`<div class="csw" style="background:${coD}" title="${esc(cat.couleur||'')}${!co?' (couleur non reconnue)':''}"></div>`}
+        <span class="cn" title="${esc(cat.nom)}">${esc(cat.nom)}</span>
+        ${!co&&!isEmoCat(cat)?`<span style="font-size:9px;color:#e74c3c" title="Couleur non reconnue: ${esc(cat.couleur)}. Cliquez ✏️ pour corriger.">⚠️</span>`:''}
+        <button class="cedit" onclick="startEditCat(${cat._id})" title="Éditer nom/couleur/emoji">✏️</button>`;
       el.appendChild(row);
     }
   }
@@ -736,11 +771,20 @@ async function saveCatEdit(catId){
   const finalColor=chosenHex?(chosenHex.startsWith('rgb')?rgbToHex(chosenHex):chosenHex):null;
   // Chercher le nom de la couleur correspondant au hex
   const colName=Object.entries(NAMED).find(([,v])=>v===finalColor)?.[0]||finalColor||'';
+  const emoji=document.getElementById('edit-emoji').value.trim();
   if(!name){alert('Le nom ne peut pas être vide.');return;}
   const updates={};
   if(name)updates.nom=name;
   if(colName)updates.couleur=colName;
-  try{await grist.docApi.applyUserActions([['UpdateRecord',CFG.cats,catId,updates]]);}
+  const actions=[];
+  if(APP.colEmoji)updates[APP.colEmoji]=emoji;
+  else if(emoji){
+    // Colonne absente : on la crée à la volée dans la table des catégories
+    actions.push(['AddColumn',CFG.cats,'emoji',{type:'Text'}]);
+    updates.emoji=emoji;
+  }
+  actions.push(['UpdateRecord',CFG.cats,catId,updates]);
+  try{await grist.docApi.applyUserActions(actions);}
   catch(e){console.warn('saveCatEdit:',e.message);}
   editingCatId=null;
   await fetchAllTables();
@@ -801,8 +845,9 @@ function renderDepts(){
     row.className='dr'+(d.visible?'':' gray');
     const dots=activeCats.map(cat=>{
       const on=d.catIds.includes(cat._id);
+      if(isEmoCat(cat))return `<div class="cdot emo${on?' on':''}" title="${esc(cat.nom)}" onclick="toggleDeptCat('${d.code}',${cat._id})">${esc(cat.emoji)}</div>`;
       const co=col(cat.couleur)||NAMED.bleu;
-      return `<div class="cdot" title="${cat.nom}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat('${d.code}',${cat._id})"></div>`;
+      return `<div class="cdot" title="${esc(cat.nom)}" style="background:${on?co:'#ddd'};border-color:${on?co:'#bbb'}" onclick="toggleDeptCat('${d.code}',${cat._id})"></div>`;
     }).join('');
     row.innerHTML=`<input type="checkbox" class="dvis" ${d.visible?'checked':''} title="Visible/grisé" onchange="toggleVis('${d.code}',this.checked)"><span class="dc">${d.code}</span><span class="dn">${d.nom}</span><div class="dcs">${dots||'<span style="font-size:10px;color:#bbb">—</span>'}</div>`;
     wrap.appendChild(row);
@@ -906,12 +951,15 @@ async function fetchAllTables(){
     const colNom=findCol(cTable,'nom','name','Nom','Name','label');
     const colCol=findCol(cTable,'couleur','color','Color','Couleur');
     const colAct=findCol(cTable,'active','Active','selectionnee','S_lection','s_lection','selection','Selection','selected','actif','Actif','visible','Visible');
+    const colEmo=findCol(cTable,'emoji','Emoji','icone','Icone','ic_ne','Ic_ne','icon','Icon');
+    APP.colEmoji=colEmo;
     const ids=cTable.id||[];
     for(let i=0;i<ids.length;i++){
       const rawAct=colAct?cTable[colAct][i]:false;
-      APP.cats.push({_id:ids[i],nom:colNom?String(cTable[colNom][i]||`Cat${ids[i]}`):String(ids[i]),couleur:colCol?String(cTable[colCol][i]||'bleu'):'bleu',active:(rawAct===true||rawAct===1)});
+      const emoji=colEmo?String(cTable[colEmo][i]??'').trim():'';
+      APP.cats.push({_id:ids[i],nom:colNom?String(cTable[colNom][i]||`Cat${ids[i]}`):String(ids[i]),couleur:colCol?String(cTable[colCol][i]||'bleu'):'bleu',active:(rawAct===true||rawAct===1),emoji});
     }
-  }else missing.push(`Catégories (${CFG.cats})`);
+  }else{APP.colEmoji=null;missing.push(`Catégories (${CFG.cats})`);}
 
   // Affiliations
   APP.dcRows={};
